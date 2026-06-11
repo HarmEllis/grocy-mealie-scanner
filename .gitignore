@@ -1,0 +1,19 @@
+.co-develop/
+.claude/
+.temp/
+node_modules/
+dist/
+.env
+*.log
+
+# ESP-IDF build artifacts
+firmware/build/
+firmware/managed_components/
+firmware/sdkconfig
+firmware/sdkconfig.old
+firmware/.idf_build_apps.json
+
+# devcontainer
+.devcontainer/.env
+bins/
+flash-server/bins/

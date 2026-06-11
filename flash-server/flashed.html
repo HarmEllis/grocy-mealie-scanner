@@ -1,0 +1,432 @@
+<!doctype html>
+<!--
+  V4 / Screen 3 — scanner flash-server post-flash instruction page.
+
+  Loaded over the local LAN from the Node static server on port 8080,
+  shown in the same browser tab the user just used with ESP Web Tools.
+  Replaces the previous Improv / config UI on that page.
+
+  Per spec: external assets ARE allowed on this page (it has LAN/internet),
+  but kept self-contained for offline reliability.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>grocy-mealie-scanner · flashed successfully</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin:0; padding:0; }
+  body {
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #1c1f24;
+    background: #f4f5f7;
+    min-height: 100vh;
+  }
+
+  /* ---- chrome ---- */
+  header.appbar {
+    background: #0c0c0e; color: #fff;
+    padding: 14px 24px;
+    display: flex; align-items: center; gap: 10px;
+    border-bottom: 1px solid #2a2a2a;
+  }
+  header.appbar .glyph {
+    display:inline-block; width:14px; height:14px; background:#fff; position:relative; border-radius:1px;
+  }
+  header.appbar .glyph::after { content:""; position:absolute; inset:4px; background:#0c0c0e; }
+  header.appbar .brand { font-weight: 600; letter-spacing: 0.01em; }
+  header.appbar .crumb { color:#9aa0a6; font-size:13px; margin-left: 6px; }
+
+  main {
+    max-width: 880px;
+    margin: 48px auto 80px;
+    padding: 0 24px;
+  }
+
+  /* ---- success card ---- */
+  .hero {
+    background: #fff;
+    border: 1px solid #e3e5e8;
+    border-radius: 16px;
+    padding: 32px 32px 28px;
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 32px;
+    align-items: center;
+    box-shadow: 0 6px 24px -12px rgba(0,0,0,0.08);
+  }
+  @media (max-width: 720px) {
+    .hero { grid-template-columns: 1fr; }
+    .hero .mock { justify-self: center; }
+  }
+  .hero .check {
+    width: 56px; height: 56px; border-radius: 50%;
+    background: #e8f5ec; color: #2a7a3a;
+    display: inline-flex; align-items: center; justify-content: center;
+    margin-bottom: 16px;
+  }
+  .hero h1 {
+    font-size: 30px; line-height: 1.15;
+    margin: 0 0 8px;
+    letter-spacing: -0.02em;
+    font-weight: 600;
+  }
+  .hero .sub {
+    color: #4b5563;
+    font-size: 16px;
+    margin: 0 0 20px;
+    max-width: 46ch;
+    text-wrap: pretty;
+  }
+  .hero .step {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 12px 14px;
+    background: #f9fafb;
+    border: 1px solid #eef0f3;
+    border-radius: 10px;
+    margin-bottom: 8px;
+  }
+  .hero .step .n {
+    flex: 0 0 24px;
+    width: 24px; height: 24px;
+    background: #1c1f24; color:#fff;
+    border-radius: 99px; text-align: center;
+    font: 600 13px/24px -apple-system, system-ui, sans-serif;
+  }
+  .hero .step .body { font-size: 14px; color: #1c1f24; }
+  .hero .step .body b { font-weight: 600; }
+
+  /* ---- e-ink mockup illustration ---- */
+  .mock {
+    width: 320px;
+  }
+  .mock .panel {
+    /* the WeAct 2.9" panel, drawn at 1.6× (296×128 → 474×205) — but here we
+       scale to 320 wide via container; actual rendering is at native 296×128
+       inside a scaled wrapper for crispness. */
+    width: 296px; height: 128px;
+    background: #FEFEFE;
+    box-shadow: 0 0 0 8px #d6d9de, 0 0 0 10px #c6cad0, 0 12px 24px -8px rgba(0,0,0,0.2);
+    border-radius: 4px;
+    position: relative;
+    transform-origin: top left;
+    transform: scale(1.05);
+    image-rendering: pixelated;
+    -webkit-font-smoothing: none; -moz-osx-font-smoothing: grayscale;
+    font: 8px/1 "Silkscreen", ui-monospace, monospace;
+    color:#000;
+  }
+  /* Pull a 1:1 scaled scene; the box around it is the bezel/grey plastic. */
+  .mock .scale-wrap {
+    height: 160px; display: flex; align-items: center; justify-content: center;
+  }
+  .mock .label {
+    font: 11px/1.4 ui-monospace, monospace;
+    color: #6b7280;
+    text-align: center; margin-top: 12px;
+  }
+
+  /* mock panel internals (mirror s1_preview) */
+  .pl-border { position:absolute; inset:1px; border:1px solid #000; }
+  .pl-header {
+    position:absolute; left:2px; top:2px; right:2px; height:13px;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:0 4px; border-bottom:1px solid #000;
+    letter-spacing: 0.5px;
+  }
+  .pl-header .logo {
+    width:9px; height:9px; background:#000; position:relative; display:inline-block;
+    vertical-align:middle; margin-right:4px;
+  }
+  .pl-header .logo::after { content:""; position:absolute; inset:2px; background:#fff; }
+  .pl-header .logo::before { content:""; position:absolute; inset:3px; background:#000; }
+  .pl-qr {
+    position:absolute; left:12px; top:20px; width:89px; height:89px;
+    background:#FEFEFE; padding:1px;
+  }
+  .pl-qr canvas, .pl-qr svg { display:block; }
+  .pl-info {
+    position:absolute; left:113px; top:26px; right:4px;
+  }
+  .pl-info .ln { display:flex; align-items:center; gap:5px; margin-bottom:12px; height:10px; }
+  .pl-info .ln .ic { width:10px; height:10px; display:block; }
+  .pl-info .ln .k { width:26px; display:inline-block; }
+  .pl-info .ln .v { font-weight: 700; }
+  .pl-hint {
+    position:absolute; left:115px; top:92px;
+  }
+  .pl-hint b { display:block; }
+  .pl-footer {
+    position:absolute; left:2px; right:2px; top:113px; height:1px; background:#000;
+  }
+  .pl-cap {
+    position:absolute; left:2px; right:2px; top:117px; text-align:center;
+    letter-spacing: 0.5px;
+  }
+
+  /* ---- troubleshooting ---- */
+  .trouble {
+    margin-top: 28px;
+    background: #fff;
+    border: 1px solid #e3e5e8;
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .trouble > h2 {
+    margin: 0;
+    font-size: 13px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.06em;
+    color: #4b5563;
+    padding: 14px 18px;
+    border-bottom: 1px solid #eef0f3;
+  }
+  .trouble details {
+    border-bottom: 1px solid #eef0f3;
+  }
+  .trouble details:last-child { border-bottom: 0; }
+  .trouble summary {
+    padding: 14px 18px;
+    cursor: pointer;
+    font-weight: 500;
+    list-style: none;
+    display: flex; align-items: center; gap: 10px;
+    color: #1c1f24;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .trouble summary::-webkit-details-marker { display: none; }
+  .trouble summary::before {
+    content: "";
+    width: 10px; height: 10px;
+    border-right: 2px solid #6b7280; border-bottom: 2px solid #6b7280;
+    transform: rotate(-45deg);
+    margin-right: 4px;
+    transition: transform .15s ease;
+  }
+  .trouble details[open] summary::before { transform: rotate(45deg); }
+  .trouble summary:hover { background: #fafbfc; }
+  .trouble .body {
+    padding: 0 18px 16px 36px;
+    color: #4b5563; font-size: 14px;
+  }
+  .trouble .body code {
+    background: #f1f2f4; padding: 1px 6px; border-radius: 4px; font-size: 13px;
+  }
+  .trouble .body .key {
+    display: inline-block;
+    background: #1c1f24; color: #fff;
+    padding: 1px 6px; border-radius: 4px;
+    font: 600 12px/1.4 ui-monospace, monospace;
+    border-bottom: 2px solid #000;
+    vertical-align: 1px;
+  }
+
+  /* ---- footer ---- */
+  footer.foot {
+    max-width: 880px; margin: 0 auto;
+    padding: 24px; color: #6b7280; font-size: 12px;
+    display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  }
+  footer.foot a { color: #3260d9; text-decoration: none; }
+  footer.foot a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<header class="appbar">
+  <span class="glyph" aria-hidden="true"></span>
+  <span class="brand">scanner flasher</span>
+  <span class="crumb">/ flashed</span>
+</header>
+
+<main>
+
+  <!-- ============ hero / success card ============ -->
+  <section class="hero">
+    <div>
+      <div class="check" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      </div>
+      <h1>Flashed successfully.</h1>
+      <p class="sub">Look at the device screen — it now shows a QR code. Scan it with your phone camera, then follow the popup to set up WiFi.</p>
+
+      <div class="step">
+        <div class="n">1</div>
+        <div class="body"><b>Scan the QR</b> on the device with your phone camera (iOS &amp; Android both detect the WiFi join string).</div>
+      </div>
+      <div class="step">
+        <div class="n">2</div>
+        <div class="body"><b>Tap "Join"</b> on the popup — your phone joins <code style="background:#eef0f3;padding:1px 4px;border-radius:3px;font:13px ui-monospace,monospace">scanner-A1B2</code>.</div>
+      </div>
+      <div class="step">
+        <div class="n">3</div>
+        <div class="body"><b>The captive portal opens automatically.</b> Enter your home WiFi and (optionally) your dashboard API URL.</div>
+      </div>
+    </div>
+
+    <div class="mock" aria-hidden="true">
+      <div class="scale-wrap">
+        <div class="panel">
+          <div class="pl-border"></div>
+          <div class="pl-header">
+            <span><span class="logo"></span>SCANNER</span>
+            <span>SETUP</span>
+          </div>
+
+          <div class="pl-qr" id="mockqr"></div>
+
+          <div class="pl-info">
+            <div class="ln">
+              <span class="ic">
+                <svg width="10" height="10" viewBox="0 0 10 10" shape-rendering="crispEdges">
+                  <rect x="2" y="2" width="6" height="1" fill="#000"/><rect x="1" y="3" width="1" height="1" fill="#000"/><rect x="8" y="3" width="1" height="1" fill="#000"/>
+                  <rect x="2" y="5" width="1" height="1" fill="#000"/><rect x="3" y="5" width="4" height="1" fill="#000"/><rect x="7" y="5" width="1" height="1" fill="#000"/>
+                  <rect x="4" y="7" width="2" height="1" fill="#000"/><rect x="4" y="9" width="2" height="1" fill="#000"/>
+                </svg>
+              </span>
+              <span class="k">SSID</span><span class="v">scanner-A1B2</span>
+            </div>
+            <div class="ln">
+              <span class="ic">
+                <svg width="10" height="10" viewBox="0 0 10 10" shape-rendering="crispEdges">
+                  <rect x="0" y="3" width="3" height="3" fill="#000"/><rect x="1" y="4" width="1" height="1" fill="#fff"/>
+                  <rect x="3" y="4" width="6" height="1" fill="#000"/><rect x="6" y="5" width="1" height="2" fill="#000"/><rect x="8" y="5" width="1" height="2" fill="#000"/>
+                </svg>
+              </span>
+              <span class="k">PASS</span><span class="v">M9k3pX7vQ2nL</span>
+            </div>
+            <div class="ln">
+              <span class="ic">
+                <svg width="10" height="10" viewBox="0 0 10 10" shape-rendering="crispEdges">
+                  <rect x="3" y="0" width="4" height="1" fill="#000"/><rect x="2" y="1" width="6" height="1" fill="#000"/>
+                  <rect x="1" y="2" width="2" height="6" fill="#000"/><rect x="7" y="2" width="2" height="6" fill="#000"/>
+                  <rect x="2" y="8" width="6" height="1" fill="#000"/><rect x="3" y="9" width="4" height="1" fill="#000"/>
+                  <rect x="3" y="2" width="4" height="6" fill="#fff"/><rect x="2" y="3" width="6" height="4" fill="#fff"/>
+                  <rect x="2" y="3" width="6" height="1" fill="#000"/><rect x="2" y="6" width="6" height="1" fill="#000"/>
+                  <rect x="4" y="1" width="2" height="8" fill="#000"/>
+                  <rect x="4" y="2" width="2" height="1" fill="#fff"/><rect x="4" y="4" width="2" height="2" fill="#fff"/><rect x="4" y="7" width="2" height="1" fill="#fff"/>
+                </svg>
+              </span>
+              <span class="k">URL</span><span class="v">192.168.4.1</span>
+            </div>
+          </div>
+
+          <div class="pl-hint">
+            <b>join &amp; popup opens</b>
+            <span>— or visit URL.</span>
+          </div>
+
+          <div class="pl-footer"></div>
+          <div class="pl-cap">Scan with phone camera</div>
+        </div>
+      </div>
+      <div class="label">WeAct 2.9″ e-paper · 296 × 128 · what you should see</div>
+    </div>
+  </section>
+
+  <!-- ============ troubleshooting ============ -->
+  <section class="trouble">
+    <h2>Troubleshooting</h2>
+
+    <details>
+      <summary>I don't see a QR on the device screen</summary>
+      <div class="body">
+        Press the <span class="key">BOOT</span> button on the dev board for ~1 second to re-enter setup mode.
+        The device boots straight into the dashboard once credentials are saved — the setup screen
+        only appears when no credentials exist or BOOT is held. If the screen is still blank, the
+        firmware probably didn't flash cleanly; try the flash flow again.
+      </div>
+    </details>
+
+    <details>
+      <summary>The popup didn't appear on my phone</summary>
+      <div class="body">
+        Some Android browsers and iOS Lockdown Mode suppress the captive-portal popup. Once your phone
+        is joined to <code>scanner-A1B2</code>, just open a browser and visit
+        <code>http://192.168.4.1</code> manually — same page, same form.
+      </div>
+    </details>
+  </section>
+
+</main>
+
+<footer class="foot">
+  <span>scanner flash-server · localhost:8080</span>
+  <span><a href="./">← Flash another</a></span>
+</footer>
+
+<script>
+/* Render a believable static QR for the mockup using qrcode-generator if it
+   loads from the LAN-mirrored copy; otherwise draw a deterministic pseudo-QR
+   so the illustration never breaks offline. */
+(function () {
+  var host = document.getElementById('mockqr');
+  if (!host) return;
+  function pseudoQr() {
+    // 29 × 29 modules with three finder eyes — visually QR-like, not scannable.
+    var n = 29, m = 3;
+    var svg = '<svg width="'+(n*m)+'" height="'+(n*m)+'" viewBox="0 0 '+(n*m)+' '+(n*m)+'" shape-rendering="crispEdges">';
+    svg += '<rect width="100%" height="100%" fill="#fff"/>';
+    function eye(ox, oy) {
+      svg += '<rect x="'+(ox*m)+'" y="'+(oy*m)+'" width="'+(7*m)+'" height="'+(7*m)+'" fill="#000"/>';
+      svg += '<rect x="'+((ox+1)*m)+'" y="'+((oy+1)*m)+'" width="'+(5*m)+'" height="'+(5*m)+'" fill="#fff"/>';
+      svg += '<rect x="'+((ox+2)*m)+'" y="'+((oy+2)*m)+'" width="'+(3*m)+'" height="'+(3*m)+'" fill="#000"/>';
+    }
+    eye(0, 0); eye(22, 0); eye(0, 22);
+    // deterministic noise — seed = phi
+    var seed = 0.6180339887;
+    for (var r = 0; r < n; r++) {
+      for (var c = 0; c < n; c++) {
+        var inEye = (r < 8 && c < 8) || (r < 8 && c > 20) || (r > 20 && c < 8);
+        if (inEye) continue;
+        seed = (seed * 9301 + 49297) % 233280;
+        var v = seed / 233280;
+        if (v > 0.55) svg += '<rect x="'+(c*m)+'" y="'+(r*m)+'" width="'+m+'" height="'+m+'" fill="#000"/>';
+      }
+    }
+    svg += '</svg>';
+    host.innerHTML = svg;
+  }
+  if (typeof qrcode === 'function') {
+    try {
+      var qr = qrcode(0, 'L');
+      qr.addData('WIFI:T:WPA;S:scanner-A1B2;P:M9k3pX7vQ2nL;;');
+      qr.make();
+      var n = qr.getModuleCount(), m = 3;
+      var svg = '<svg width="'+(n*m)+'" height="'+(n*m)+'" viewBox="0 0 '+(n*m)+' '+(n*m)+'" shape-rendering="crispEdges">';
+      svg += '<rect width="100%" height="100%" fill="#fff"/>';
+      for (var r = 0; r < n; r++) for (var c = 0; c < n; c++)
+        if (qr.isDark(r, c)) svg += '<rect x="'+(c*m)+'" y="'+(r*m)+'" width="'+m+'" height="'+m+'" fill="#000"/>';
+      svg += '</svg>';
+      host.innerHTML = svg;
+    } catch (e) { pseudoQr(); }
+  } else {
+    pseudoQr();
+  }
+})();
+</script>
+<script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
+<script>
+/* re-run after qrcode-generator script tag resolves (deferred to end so the
+   page is fully functional before this kicks in) */
+(function () {
+  var host = document.getElementById('mockqr');
+  if (host && typeof qrcode === 'function') {
+    try {
+      var qr = qrcode(0, 'L');
+      qr.addData('WIFI:T:WPA;S:scanner-A1B2;P:M9k3pX7vQ2nL;;');
+      qr.make();
+      var n = qr.getModuleCount(), m = 3;
+      var svg = '<svg width="'+(n*m)+'" height="'+(n*m)+'" viewBox="0 0 '+(n*m)+' '+(n*m)+'" shape-rendering="crispEdges">';
+      svg += '<rect width="100%" height="100%" fill="#fff"/>';
+      for (var r = 0; r < n; r++) for (var c = 0; c < n; c++)
+        if (qr.isDark(r, c)) svg += '<rect x="'+(c*m)+'" y="'+(r*m)+'" width="'+m+'" height="'+m+'" fill="#000"/>';
+      svg += '</svg>';
+      host.innerHTML = svg;
+    } catch (e) { /* keep pseudo */ }
+  }
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!--
+    style-src allows 'unsafe-inline' because esp-web-tools injects its
+    install/log dialog styles into its custom-element shadow DOM.
+    script-src stays strictly pinned with SRI.
+  -->
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' https://unpkg.com/esp-web-tools@10.2.1/dist/web/; connect-src 'self'"
+  >
+  <title>grocy-mealie-scanner flasher</title>
+  <script
+    type="module"
+    src="https://unpkg.com/esp-web-tools@10.2.1/dist/web/install-button.js"
+    integrity="sha384-DLSRQX8nILUsYRCKoOL+FvGRis5HoNA+9ak4QYqreENR9UVDIXUSoZrdt1Ibty96"
+    crossorigin="anonymous"
+  ></script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main>
+    <header>
+      <h1>grocy-mealie-scanner</h1>
+      <p id="status">Ready to flash</p>
+      <p class="version"><!-- VERSION --></p>
+    </header>
+
+    <section>
+      <h2>1. Flash firmware</h2>
+      <p class="hint">Plug the device in over USB and press <em>Install</em>. Web Serial is used only for the initial flash; configuration happens on the device's SoftAP portal afterwards.</p>
+      <div class="row">
+        <esp-web-install-button id="installer" manifest="manifest.json"></esp-web-install-button>
+      </div>
+    </section>
+
+    <section>
+      <h2>2. First-time provisioning</h2>
+      <p class="hint">When flashing finishes, the touchscreen shows a QR code and a SoftAP name like <code>scanner-A4F2</code> with a password. Scan the QR (or join the AP manually and open <code>http://192.168.4.1</code>) and fill in WiFi + API. The device saves and reboots.</p>
+      <p class="hint">Need to re-open this flow later? Power the device on first, then hold <strong>BOOT</strong> for ~5&nbsp;s until the SoftAP setup screen appears. Do <em>not</em> hold BOOT while plugging in — that puts the ESP32-S3 into ROM download mode before firmware runs.</p>
+    </section>
+  </main>
+
+  <script type="module">
+    // After a successful install, hop to /flashed for the full V4 S3
+    // success page with troubleshooting and the e-ink mockup.
+    const btn = document.getElementById('installer');
+    btn.addEventListener('state-changed', (ev) => {
+      const detail = ev.detail || {};
+      if (detail.state === 'FINISHED') {
+        window.location.href = 'flashed.html';
+      }
+      const s = document.getElementById('status');
+      if (s && detail.message) s.textContent = detail.message;
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#161617}
+  @keyframes scanmove{0%{transform:translateY(-46px);opacity:.2}50%{opacity:1}100%{transform:translateY(46px);opacity:.2}}
+  @keyframes pulsedot{0%,100%{opacity:.55}50%{opacity:1}}
+</style>
+</helmet>
+
+<div style="--device:#0b0b0c;--card:#161618;--card2:#1e1e22;--bd:rgba(255,255,255,.08);--bd2:rgba(255,255,255,.14);--tx:#ededf0;--dim:#8b8b93;--dim2:#5e5e66;--amber:#f5c13d;--green:oklch(.79 .13 156);--coral:oklch(.72 .15 32);--blue:oklch(.74 .11 250);--opened:oklch(.83 .13 84);--mono:'JetBrains Mono',ui-monospace,monospace;--sans:'Plus Jakarta Sans',system-ui,sans-serif;background:#161617;min-height:100vh;padding:40px 44px 80px;font-family:'Plus Jakarta Sans',system-ui,sans-serif;color:#ededf0">
+
+  <!-- PAGE HEADER -->
+  <div style="display:flex;align-items:flex-start;gap:16px;margin-bottom:8px">
+    <div style="width:44px;height:44px;border-radius:11px;background:#f5c13d;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 6px 20px rgba(245,193,61,.25)">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0b0b0c" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h2M3 7v10M7 7v10M9 7v10M12 7v10M15 7v10M17 7v10M21 7v10"/></svg>
+    </div>
+    <div>
+      <div style="font-size:26px;font-weight:800;letter-spacing:-.01em;line-height:1.1">Grocy · Mealie Scanner</div>
+      <div style="font-size:13.5px;color:#8b8b93;margin-top:3px;max-width:640px;line-height:1.5">Firmware UI for the Freenove ESP32-S3 — 2.8&quot; IPS capacitive touch, <span style="font-family:var(--mono);color:#b9b9c0">240&times;320</span> portrait. Screens shown at 1:1 device resolution. Three layout directions + two feedback styles.</div>
+    </div>
+  </div>
+
+  <!-- LEGEND -->
+  <div style="display:flex;flex-wrap:nowrap;gap:18px;align-items:center;margin:22px 0 36px;padding:14px 18px;background:#1c1c1f;border:1px solid var(--bd);border-radius:12px;width:fit-content;white-space:nowrap">
+    <span style="font-size:11px;text-transform:uppercase;letter-spacing:.14em;color:var(--dim2);font-weight:700">Action states</span>
+    <div style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--tx)"><span style="width:11px;height:11px;border-radius:3px;background:var(--green)"></span>Bought</div>
+    <div style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--tx)"><span style="width:11px;height:11px;border-radius:3px;background:var(--opened)"></span>Opened</div>
+    <div style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--tx)"><span style="width:11px;height:11px;border-radius:3px;background:var(--coral)"></span>Consumed</div>
+    <div style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--tx)"><span style="width:11px;height:11px;border-radius:3px;background:var(--blue)"></span>Shopping list</div>
+  </div>
+
+  <!-- ============ VARIANT A — GRID TILES ============ -->
+  <div style="margin-bottom:54px">
+    <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:6px">
+      <span style="font-family:var(--mono);font-size:12px;color:var(--amber);font-weight:700;letter-spacing:.1em">VARIANT A</span>
+      <span style="font-size:19px;font-weight:700">Grid tiles</span>
+    </div>
+    <div style="font-size:13px;color:var(--dim);margin-bottom:24px;max-width:560px">Product card on top, four equal colour-coded tiles below. Biggest tap targets — easiest to hit while holding the scanner.</div>
+
+    <div style="display:flex;gap:34px;flex-wrap:wrap">
+
+      <!-- A · IDLE -->
+      <div style="display:flex;flex-direction:column;align-items:center;gap:11px">
+        <div style="padding:7px;background:#040405;border-radius:20px;box-shadow:0 14px 40px rgba(0,0,0,.55)">
+          <div style="width:240px;height:320px;background:var(--device);border-radius:14px;overflow:hidden;position:relative;font-family:var(--sans);display:flex;flex-direction:column">
+            <div style="height:26px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-bottom:1px solid var(--bd)"><div style="display:flex;align-items:center;gap:6px"><span style="width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 7px var(--green);animation:pulsedot 2.4s ease-in-out infinite"></span><span style="font-size:10px;color:var(--dim)">Connected</span></div><span style="font-family:var(--mono);font-size:10px;color:var(--dim)">06:52</span></div>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px">
+              <div style="position:relative;width:128px;height:96px;border-radius:14px;background:rgba(255,255,255,.02);display:flex;align-items:center;justify-content:center;overflow:hidden">
+                <div style="position:absolute;top:8px;left:8px;width:18px;height:18px;border-top:2px solid var(--amber);border-left:2px solid var(--amber);border-radius:4px 0 0 0"></div>
+                <div style="position:absolute;top:8px;right:8px;width:18px;height:18px;border-top:2px solid var(--amber);border-right:2px solid var(--amber);border-radius:0 4px 0 0"></div>
+                <div style="position:absolute;bottom:8px;left:8px;width:18px;height:18px;border-bottom:2px solid var(--amber);border-left:2px solid var(--amber);border-radius:0 0 0 4px"></div>
+                <div style="position:absolute;bottom:8px;right:8px;width:18px;height:18px;border-bottom:2px solid var(--amber);border-right:2px solid var(--amber);border-radius:0 0 4px 0"></div>
+                <div style="display:flex;align-items:center;gap:3px;height:46px">
+                  <span style="width:3px;height:100%;background:var(--tx)"></span><span style="width:2px;height:100%;background:var(--dim)"></span><span style="width:4px;height:100%;background:var(--tx)"></span><span style="width:2px;height:100%;background:var(--dim2)"></span><span style="width:3px;height:100%;background:var(--tx)"></span><span style="width:5px;height:100%;background:var(--tx)"></span><span style="width:2px;height:100%;background:var(--dim)"></span><span style="width:3px;height:100%;background:var(--tx)"></span><span style="width:2px;height:100%;background:var(--dim2)"></span><span style="width:4px;height:100%;background:var(--tx)"></span>
+                </div>
+                <div style="position:absolute;left:10px;right:10px;height:2px;background:linear-gradient(90deg,transparent,var(--amber),transparent);box-shadow:0 0 8px var(--amber);animation:scanmove 1.9s ease-in-out infinite"></div>
+              </div>
+              <div style="font-size:17px;font-weight:700;margin-top:24px">Ready to scan</div>
+              <div style="font-size:12px;color:var(--dim);margin-top:5px;text-align:center;line-height:1.4">Point the scanner<br>at a barcode</div>
+            </div>
+            <div style="padding:9px 12px;border-top:1px solid var(--bd);display:flex;align-items:center;gap:7px"><span style="font-size:10px;color:var(--dim2);text-transform:uppercase;letter-spacing:.1em">Last</span><span style="font-size:11px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Campina Halfvolle Melk</span><span style="font-family:var(--mono);font-size:10px;color:var(--dim2);margin-left:auto">06:41</span></div>
+          </div>
+        </div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--dim);letter-spacing:.06em">IDLE</div>
+      </div>
+
+      <!-- A · PRODUCT FOUND -->
+      <div style="display:flex;flex-direction:column;align-items:center;gap:11px">
+        <div style="padding:7px;background:#040405;border-radius:20px;box-shadow:0 14px 40px rgba(0,0,0,.55)">
+          <div style="width:240px;height:320px;background:var(--device);border-radius:14px;overflow:hidden;position:relative;font-family:var(--sans);display:flex;flex-direction:column">
+            <div style="height:26px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-bottom:1px solid var(--bd)"><div style="display:flex;align-items:center;gap:6px"><span style="width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 7px var(--green)"></span><span style="font-size:10px;color:var(--dim)">Scanned</span></div><span style="font-family:var(--mono);font-size:10px;color:var(--dim)">06:52</span></div>
+            <div style="flex:1;display:flex;flex-direction:column;padding:12px;gap:11px">
+              <!-- product -->
+              <div>
+                <div style="font-size:15.5px;font-weight:700;line-height:1.18;text-wrap:pretty">Heinz Tomato Ketchup</div>
+                <div style="font-size:11px;color:var(--dim);margin-top:3px">570&nbsp;g · Sauces</div>
+              </div>
+              <!-- stats -->
+              <div style="display:flex;gap:7px">
+                <div style="flex:1;background:var(--card2);border:1px solid var(--bd);border-radius:9px;padding:7px 8px"><div style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim2);font-weight:700">In stock</div><div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--amber);line-height:1.1;margin-top:1px">3</div></div>
+                <div style="flex:1;background:var(--card2);border:1px solid var(--bd);border-radius:9px;padding:7px 8px"><div style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim2);font-weight:700">Min</div><div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--dim);line-height:1.1;margin-top:1px">2</div></div>
+                <div style="flex:1;background:var(--card2);border:1px solid var(--bd);border-radius:9px;padding:7px 8px"><div style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim2);font-weight:700">Opened</div><div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--green);line-height:1.1;margin-top:1px">1</div></div>
+              </div>
+              <!-- grid -->
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;flex:1">
+                <div style="display:flex;flex-direction:column;justify-content:space-between;padding:10px;border-radius:11px;background:color-mix(in srgb,var(--green) 13%,transparent);border:1px solid color-mix(in srgb,var(--green) 32%,transparent)"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="oklch(.79 .13 156)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg><span style="font-size:13px;font-weight:600">Bought</span></div>
+                <div style="display:flex;flex-direction:column;justify-content:space-between;padding:10px;border-radius:11px;background:color-mix(in srgb,var(--opened) 13%,transparent);border:1px solid color-mix(in srgb,var(--opened) 32%,transparent)"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="oklch(.83 .13 84)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8l-9 5-9-5 9-5 9 5Z"/><path d="M3 8v8l9 5 9-5V8"/></svg><span style="font-size:13px;font-weight:600">Opened</span></div>
+                <div style="display:flex;flex-direction:column;justify-content:space-between;padding:10px;border-radius:11px;background:color-mix(in srgb,var(--coral) 13%,transparent);border:1px solid color-mix(in srgb,var(--coral) 32%,transparent)"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="oklch(.72 .15 32)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span style="font-size:13px;font-weight:600">Consumed</span></div>
+                <div style="display:flex;flex-direction:column;justify-content:space-between;padding:10px;border-radius:11px;background:color-mix(in srgb,var(--blue) 13%,transparent);border:1px solid color-mix(in srgb,var(--blue) 32%,transparent)"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="oklch(.74 .11 250)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2 3h2.2l2.3 12.2a1.6 1.6 0 0 0 1.6 1.3h8.6a1.6 1.6 0 0 0 1.6-1.3L21 7H5.2"/></svg><span style="font-size:12.5px;font-weight:600">Shopping</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--dim);letter-spacing:.06em">PRODUCT FOUND</div>
+      </div>
+
+      <!-- A · NOT FOUND -->
+      <div style="display:flex;flex-direction:column;align-items:center;gap:11px">
+        <div style="padding:7px;background:#040405;border-radius:20px;box-shadow:0 14px 40px rgba(0,0,0,.55)">
+          <div style="width:240px;height:320px;background:var(--device);border-radius:14px;overflow:hidden;position:relative;font-family:var(--sans);display:flex;flex-direction:column">
+            <div style="height:26px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-bottom:1px solid var(--bd)"><div style="display:flex;align-items:center;gap:6px"><span style="width:6px;height:6px;border-radius:50%;background:var(--amber);box-shadow:0 0 7px var(--amber)"></span><span style="font-size:10px;color:var(--dim)">Unknown</span></div><span style="font-family:var(--mono);font-size:10px;color:var(--dim)">06:53</span></div>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;padding:18px 14px">
+              <div style="width:54px;height:54px;border-radius:50%;background:color-mix(in srgb,var(--amber) 14%,transparent);border:1px solid color-mix(in srgb,var(--amber) 36%,transparent);display:flex;align-items:center;justify-content:center;margin-top:6px">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.8 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.8a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>
+              </div>
+              <div style="font-size:16px;font-weight:700;margin-top:14px">Product not found</div>
+              <div style="font-size:11.5px;color:var(--dim);margin-top:4px;text-align:center">No match in Grocy or Mealie</div>
+              <div style="margin-top:12px;padding:7px 12px;border-radius:8px;background:rgba(255,255,255,.03);border:1px solid var(--bd);font-family:var(--mono);font-size:13px;letter-spacing:.06em;color:var(--tx)">8715700110622</div>
+              <div style="margin-top:auto;width:100%;display:flex;flex-direction:column;gap:7px">
+                <div style="display:flex;align-items:center;justify-content:center;gap:7px;height:42px;border-radius:10px;background:var(--amber);color:#0b0b0c;font-size:13.5px;font-weight:700"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0b0b0c" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>Add to Grocy</div>
+                <div style="display:flex;align-items:center;justify-content:center;gap:7px;height:40px;border-radius:10px;background:transparent;border:1px solid var(--bd2);color:var(--tx);font-size:13px;font-weight:600">Add to shopping list</div>
+                <div style="text-align:center;font-size:12px;color:var(--dim);padding:4px">Scan again</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--dim);letter-spacing:.06em">NOT FOUND</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ============ VARIANT B — ACTION ROWS ============ -->
+  <div style="margin-bottom:54px">
+    <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:6px">
+      <span style="font-family:var(--mono);font-size:12px;color:var(--amber);font-weight:700;letter-spacing:.1em">VARIANT B</span>
+      <span style="font-size:19px;font-weight:700">Action rows</span>
+    </div>
+    <div style="font-size:13px;color:var(--dim);margin-bottom:24px;max-width:560px">Compact product header, four full-width rows with a hint line each. Reads top-to-bottom like the dashboard's Manual&nbsp;Sync list.</div>
+
+    <div style="display:flex;gap:34px;flex-wrap:wrap">
+
+      <!-- B · IDLE -->
+      <div style="display:flex;flex-direction:column;align-items:center;gap:11px">
+        <div style="padding:7px;background:#040405;border-radius:20px;box-shadow:0 14px 40px rgba(0,0,0,.55)">
+          <div style="width:240px;height:320px;background:var(--device);border-radius:14px;overflow:hidden;position:relative;font-family:var(--sans);display:flex;flex-direction:column">
+            <div style="height:26px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-bottom:1px solid var(--bd)"><div style="display:flex;align-items:center;gap:6px"><span style="width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 7px var(--green);animation:pulsedot 2.4s ease-in-out infinite"></span><span style="font-size:10px;color:var(--dim)">Connected</span></div><span style="font-family:var(--mono);font-size:10px;color:var(--dim)">06:52</span></div>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px">
+              <div style="width:96px;height:96px;border-radius:50%;border:1.5px solid color-mix(in srgb,var(--amber) 35%,transparent);display:flex;align-items:center;justify-content:center;position:relative">
+                <div style="position:absolute;inset:-9px;border-radius:50%;border:1px solid color-mix(in srgb,var(--amber) 14%,transparent)"></div>
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v10M6 7v10M9 7v10M12 7v10M15 7v10M18 7v10M21 7v10" opacity=".9"/></svg>
+              </div>
+              <div style="font-size:17px;font-weight:700;margin-top:22px">Ready to scan</div>
+              <div style="font-size:12px;color:var(--dim);margin-top:5px;text-align:center;line-height:1.4">Hold a barcode in front<br>of the scanner</div>
+            </div>
+            <div style="padding:9px 12px;border-top:1px solid var(--bd);display:flex;align-items:center;gap:7px"><span style="width:5px;height:5px;border-radius:50%;background:var(--dim2)"></span><span style="font-size:11px;color:var(--dim)">74 products mapped</span><span style="font-family:var(--mono);font-size:10px;color:var(--dim2);margin-left:auto">v1.11.0</span></div>
+          </div>
+        </div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--dim);letter-spacing:.06em">IDLE</div>
+      </div>
+
+      <!-- B · PRODUCT FOUND -->
+      <div style="display:flex;flex-direction:column;align-items:center;gap:11px">
+        <div style="padding:7px;background:#040405;border-radius:20px;box-shadow:0 14px 40px rgba(0,0,0,.55)">
+          <div style="width:240px;height:320px;background:var(--device);border-radius:14px;overflow:hidden;position:relative;font-family:var(--sans);display:flex;flex-direction:column">
+            <div style="height:26px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-bottom:1px solid var(--bd)"><div style="display:flex;align-items:center;gap:6px"><span style="width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 7px var(--green)"></span><span style="font-size:10px;color:var(--dim)">Scanned</span></div><span style="font-family:var(--mono);font-size:10px;color:var(--dim)">06:52</span></div>
+            <!-- header -->
+            <div style="padding:11px 12px;border-bottom:1px solid var(--bd);background:rgba(255,255,255,.015)">
+              <div style="font-size:14.5px;font-weight:700;line-height:1.16;text-wrap:pretty">Heinz Tomato Ketchup</div>
+              <div style="display:flex;align-items:center;gap:9px;margin-top:5px;font-size:10.5px;color:var(--dim)"><span><span style="font-family:var(--mono);color:var(--amber);font-weight:700">3</span> in stock</span><span style="color:var(--dim2)">·</span><span>min <span style="font-family:var(--mono);color:var(--tx)">2</span></span><span style="color:var(--dim2)">·</span><span><span style="font-family:var(--mono);color:var(--green);font-weight:700">1</span> open</span></div>
+            </div>
+            <!-- rows -->
+            <div style="flex:1;display:flex;flex-direction:column;padding:9px;gap:7px">
+              <div style="flex:1;display:flex;align-items:center;gap:11px;padding:0 11px;border-radius:10px;background:var(--card2);border:1px solid var(--bd);position:relative;overflow:hidden"><span style="position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--green)"></span><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="oklch(.79 .13 156)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg><div style="flex:1"><div style="font-size:13.5px;font-weight:600">Bought</div><div style="font-size:10px;color:var(--dim)">Add 1 to stock</div></div><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--dim2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></div>
+              <div style="flex:1;display:flex;align-items:center;gap:11px;padding:0 11px;border-radius:10px;background:var(--card2);border:1px solid var(--bd);position:relative;overflow:hidden"><span style="position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--opened)"></span><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="oklch(.83 .13 84)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8l-9 5-9-5 9-5 9 5Z"/><path d="M3 8v8l9 5 9-5V8"/></svg><div style="flex:1"><div style="font-size:13.5px;font-weight:600">Opened</div><div style="font-size:10px;color:var(--dim)">Start using a unit</div></div><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--dim2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></div>
+              <div style="flex:1;display:flex;align-items:center;gap:11px;padding:0 11px;border-radius:10px;background:var(--card2);border:1px solid var(--bd);position:relative;overflow:hidden"><span style="position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--coral)"></span><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="oklch(.72 .15 32)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><div style="flex:1"><div style="font-size:13.5px;font-weight:600">Consumed</div><div style="font-size:10px;color:var(--dim)">Remove 1 from stock</div></div><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--dim2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></div>
+              <div style="flex:1;display:flex;align-items:center;gap:11px;padding:0 11px;border-radius:10px;background:var(--card2);border:1px solid var(--bd);position:relative;overflow:hidden"><span style="position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--blue)"></span><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="oklch(.74 .11 250)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2 3h2.2l2.3 12.2a1.6 1.6 0 0 0 1.6 1.3h8.6a1.6 1.6 0 0 0 1.6-1.3L21 7H5.2"/></svg><div style="flex:1"><div style="font-size:13.5px;font-weight:600">Shopping list</div><div style="font-size:10px;color:var(--dim)">Mark to buy</div></div><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--dim2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></div>
+            </div>
+          </div>
+        </div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--dim);letter-spacing:.06em">PRODUCT FOUND</div>
+      </div>
+
+      <!-- B · NOT FOUND -->
+      <div style="display:flex;flex-direction:column;align-items:center;gap:11px">
+        <div style="padding:7px;background:#040405;border-radius:20px;box-shadow:0 14px 40px rgba(0,0,0,.55)">
+          <div style="width:240px;height:320px;background:var(--device);border-radius:14px;overflow:hidden;position:relative;font-family:var(--sans);display:flex;flex-direction:column">
+            <div style="height:26px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-bottom:1px solid var(--bd)"><div style="display:flex;align-items:center;gap:6px"><span style="width:6px;height:6px;border-radius:50%;background:var(--amber);box-shadow:0 0 7px var(--amber)"></span><span style="font-size:10px;color:var(--dim)">Unknown</span></div><span style="font-family:var(--mono);font-size:10px;color:var(--dim)">06:53</span></div>
+            <div style="padding:14px 12px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:11px">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M10.3 3.8 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.8a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>
+              <div><div style="font-size:14.5px;font-weight:700">Not found</div><div style="font-family:var(--mono);font-size:11px;color:var(--dim);margin-top:2px">8715700110622</div></div>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;padding:9px;gap:7px">
+              <div style="flex:1;display:flex;align-items:center;gap:11px;padding:0 11px;border-radius:10px;background:color-mix(in srgb,var(--amber) 12%,transparent);border:1px solid color-mix(in srgb,var(--amber) 30%,transparent)"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg><div style="flex:1"><div style="font-size:13.5px;font-weight:600">Add to Grocy</div><div style="font-size:10px;color:var(--dim)">Create a new product</div></div></div>
+              <div style="flex:1;display:flex;align-items:center;gap:11px;padding:0 11px;border-radius:10px;background:var(--card2);border:1px solid var(--bd)"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="oklch(.74 .11 250)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2 3h2.2l2.3 12.2a1.6 1.6 0 0 0 1.6 1.3h8.6a1.6 1.6 0 0 0 1.6-1.3L21 7H5.2"/></svg><div style="flex:1"><div style="font-size:13.5px;font-weight:600">Shopping list</div><div style="font-size:10px;color:var(--dim)">Note the barcode to buy</div></div></div>
+              <div style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;padding:0 11px;border-radius:10px;border:1px dashed var(--bd2);color:var(--dim)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg><span style="font-size:13px;font-weight:600">Scan again</span></div>
+            </div>
+          </div>
+        </div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--dim);letter-spacing:.06em">NOT FOUND</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ============ VARIANT C — BOLD HERO ============ -->
+  <div style="margin-bottom:54px">
+    <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:6px">
+      <span style="font-family:var(--mono);font-size:12px;color:var(--amber);font-weight:700;letter-spacing:.1em">VARIANT C</span>
+      <span style="font-size:19px;font-weight:700">Bold hero</span>
+    </div>
+    <div style="font-size:13px;color:var(--dim);margin-bottom:24px;max-width:560px">Large product name, a stock bar showing current vs. minimum, then solid colour tiles. Most legible from a distance on the small panel.</div>
+
+    <div style="display:flex;gap:34px;flex-wrap:wrap">
+
+      <!-- C · IDLE -->
+      <div style="display:flex;flex-direction:column;align-items:center;gap:11px">
+        <div style="padding:7px;background:#040405;border-radius:20px;box-shadow:0 14px 40px rgba(0,0,0,.55)">
+          <div style="width:240px;height:320px;background:var(--device);border-radius:14px;overflow:hidden;position:relative;font-family:var(--sans);display:flex;flex-direction:column">
+            <div style="height:26px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-bottom:1px solid var(--bd)"><div style="display:flex;align-items:center;gap:6px"><span style="width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 7px var(--green);animation:pulsedot 2.4s ease-in-out infinite"></span><span style="font-size:10px;color:var(--dim)">Connected</span></div><span style="font-family:var(--mono);font-size:10px;color:var(--dim)">06:52</span></div>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;background:radial-gradient(120% 80% at 50% 38%,rgba(245,193,61,.07),transparent 70%)">
+              <div style="width:120px;height:120px;border-radius:24px;background:var(--amber);display:flex;align-items:center;justify-content:center;box-shadow:0 12px 34px rgba(245,193,61,.32)">
+                <svg width="58" height="58" viewBox="0 0 24 24" fill="none" stroke="#0b0b0c" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v10M6.5 7v10M10 7v10M13.5 7v10M17 7v10M20.5 7v10"/></svg>
+              </div>
+              <div style="font-size:20px;font-weight:800;margin-top:24px;letter-spacing:-.01em">Scan a product</div>
+              <div style="font-size:12px;color:var(--dim);margin-top:6px">Trigger the scanner to begin</div>
+            </div>
+          </div>
+        </div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--dim);letter-spacing:.06em">IDLE</div>
+      </div>
+
+      <!-- C · PRODUCT FOUND -->
+      <div style="display:flex;flex-direction:column;align-items:center;gap:11px">
+        <div style="padding:7px;background:#040405;border-radius:20px;box-shadow:0 14px 40px rgba(0,0,0,.55)">
+          <div style="width:240px;height:320px;background:var(--device);border-radius:14px;overflow:hidden;position:relative;font-family:var(--sans);display:flex;flex-direction:column">
+            <div style="height:26px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-bottom:1px solid var(--bd)"><div style="display:flex;align-items:center;gap:6px"><span style="width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 7px var(--green)"></span><span style="font-size:10px;color:var(--dim)">Scanned</span></div><span style="font-family:var(--mono);font-size:10px;color:var(--dim)">06:52</span></div>
+            <div style="flex:1;display:flex;flex-direction:column;padding:13px 12px;gap:11px">
+              <div>
+                <div style="font-size:9px;text-transform:uppercase;letter-spacing:.14em;color:var(--dim2);font-weight:700">Scanned</div>
+                <div style="font-size:18px;font-weight:800;line-height:1.12;margin-top:3px;letter-spacing:-.01em;text-wrap:pretty">Heinz Tomato Ketchup</div>
+              </div>
+              <!-- stock bar -->
+              <div style="background:var(--card2);border:1px solid var(--bd);border-radius:11px;padding:10px 11px">
+                <div style="display:flex;align-items:baseline;justify-content:space-between"><span style="font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--dim2);font-weight:700">In stock</span><span style="white-space:nowrap"><span style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--amber)">3</span><span style="font-size:11px;color:var(--dim)"> / min 2</span></span></div>
+                <div style="height:6px;border-radius:3px;background:rgba(255,255,255,.07);margin-top:8px;position:relative;overflow:hidden"><div style="position:absolute;left:0;top:0;bottom:0;width:60%;border-radius:3px;background:var(--amber)"></div><div style="position:absolute;left:40%;top:-2px;bottom:-2px;width:1.5px;background:var(--dim)"></div></div>
+                <div style="display:flex;align-items:center;gap:5px;margin-top:8px"><span style="width:7px;height:7px;border-radius:2px;background:var(--green)"></span><span style="font-size:10.5px;color:var(--dim)"><span style="font-family:var(--mono);color:var(--green);font-weight:700">1</span> unit currently open</span></div>
+              </div>
+              <!-- tiles -->
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;flex:1">
+                <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;gap:6px;border-radius:11px;background:var(--green);color:#06140c"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#06140c" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg><span style="font-size:13px;font-weight:700">Bought</span></div>
+                <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;gap:6px;border-radius:11px;background:var(--opened);color:#181206"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#181206" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8l-9 5-9-5 9-5 9 5Z"/><path d="M3 8v8l9 5 9-5V8"/></svg><span style="font-size:13px;font-weight:700">Opened</span></div>
+                <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;gap:6px;border-radius:11px;background:var(--coral);color:#1a0a06"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1a0a06" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span style="font-size:13px;font-weight:700">Consumed</span></div>
+                <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;gap:6px;border-radius:11px;background:var(--blue);color:#06101e"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#06101e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2 3h2.2l2.3 12.2a1.6 1.6 0 0 0 1.6 1.3h8.6a1.6 1.6 0 0 0 1.6-1.3L21 7H5.2"/></svg><span style="font-size:12px;font-weight:700">Shopping</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--dim);letter-spacing:.06em">PRODUCT FOUND</div>
+      </div>
+
+      <!-- C · NOT FOUND -->
+      <div style="display:flex;flex-direction:column;align-items:center;gap:11px">
+        <div style="padding:7px;background:#040405;border-radius:20px;box-shadow:0 14px 40px rgba(0,0,0,.55)">
+          <div style="width:240px;height:320px;background:var(--device);border-radius:14px;overflow:hidden;position:relative;font-family:var(--sans);display:flex;flex-direction:column">
+            <div style="height:26px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-bottom:1px solid var(--bd)"><div style="display:flex;align-items:center;gap:6px"><span style="width:6px;height:6px;border-radius:50%;background:var(--amber);box-shadow:0 0 7px var(--amber)"></span><span style="font-size:10px;color:var(--dim)">Unknown</span></div><span style="font-family:var(--mono);font-size:10px;color:var(--dim)">06:53</span></div>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:18px 16px;background:radial-gradient(120% 70% at 50% 34%,rgba(245,193,61,.08),transparent 70%)">
+              <div style="width:76px;height:76px;border-radius:20px;background:color-mix(in srgb,var(--amber) 16%,transparent);border:1px solid color-mix(in srgb,var(--amber) 38%,transparent);display:flex;align-items:center;justify-content:center">
+                <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.8 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.8a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>
+              </div>
+              <div style="font-size:19px;font-weight:800;margin-top:16px">Unknown code</div>
+              <div style="font-family:var(--mono);font-size:13px;color:var(--dim);margin-top:8px;letter-spacing:.05em">8715700110622</div>
+              <div style="width:100%;margin-top:20px;display:flex;flex-direction:column;gap:8px">
+                <div style="display:flex;align-items:center;justify-content:center;gap:8px;height:44px;border-radius:11px;background:var(--amber);color:#0b0b0c;font-size:14px;font-weight:700">Add to Grocy</div>
+                <div style="display:flex;gap:8px"><div style="flex:1;display:flex;align-items:center;justify-content:center;height:40px;border-radius:11px;border:1px solid var(--bd2);color:var(--tx);font-size:12.5px;font-weight:600">Shopping</div><div style="flex:1;display:flex;align-items:center;justify-content:center;height:40px;border-radius:11px;border:1px solid var(--bd2);color:var(--dim);font-size:12.5px;font-weight:600">Retry</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--dim);letter-spacing:.06em">NOT FOUND</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ============ FEEDBACK ============ -->
+  <div>
+    <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:6px">
+      <span style="font-family:var(--mono);font-size:12px;color:var(--amber);font-weight:700;letter-spacing:.1em">FEEDBACK</span>
+      <span style="font-size:19px;font-weight:700">After a tap — pick one</span>
+    </div>
+    <div style="font-size:13px;color:var(--dim);margin-bottom:24px;max-width:560px">The same confirmation in two styles. Both auto-return to Idle after ~2&nbsp;s. Works with any variant above.</div>
+
+    <div style="display:flex;gap:34px;flex-wrap:wrap">
+
+      <!-- TOAST -->
+      <div style="display:flex;flex-direction:column;align-items:center;gap:11px">
+        <div style="padding:7px;background:#040405;border-radius:20px;box-shadow:0 14px 40px rgba(0,0,0,.55)">
+          <div style="width:240px;height:320px;background:var(--device);border-radius:14px;overflow:hidden;position:relative;font-family:var(--sans);display:flex;flex-direction:column">
+            <div style="height:26px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-bottom:1px solid var(--bd)"><div style="display:flex;align-items:center;gap:6px"><span style="width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 7px var(--green)"></span><span style="font-size:10px;color:var(--dim)">Saved</span></div><span style="font-family:var(--mono);font-size:10px;color:var(--dim)">06:52</span></div>
+            <!-- toast -->
+            <div style="position:absolute;top:34px;left:10px;right:10px;z-index:5;display:flex;align-items:center;gap:9px;padding:10px 12px;border-radius:11px;background:color-mix(in srgb,var(--green) 18%,#0b0b0c);border:1px solid color-mix(in srgb,var(--green) 45%,transparent);box-shadow:0 8px 22px rgba(0,0,0,.5)">
+              <div style="width:24px;height:24px;border-radius:50%;background:var(--green);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#06140c" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+              <div style="flex:1"><div style="font-size:12.5px;font-weight:700;color:var(--tx)">Marked as bought</div><div style="font-size:10.5px;color:color-mix(in srgb,var(--green) 70%,var(--tx))">Stock <span style="font-family:var(--mono)">3 → 4</span></div></div>
+            </div>
+            <!-- dimmed underlying screen -->
+            <div style="flex:1;display:flex;flex-direction:column;padding:12px;gap:11px;opacity:.42;filter:saturate(.6)">
+              <div><div style="font-size:15.5px;font-weight:700;line-height:1.18">Heinz Tomato Ketchup</div><div style="font-size:11px;color:var(--dim);margin-top:3px">570&nbsp;g · Sauces</div></div>
+              <div style="display:flex;gap:7px">
+                <div style="flex:1;background:var(--card2);border:1px solid var(--bd);border-radius:9px;padding:7px 8px"><div style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim2);font-weight:700">In stock</div><div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--green);line-height:1.1;margin-top:1px">4</div></div>
+                <div style="flex:1;background:var(--card2);border:1px solid var(--bd);border-radius:9px;padding:7px 8px"><div style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim2);font-weight:700">Min</div><div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--dim);line-height:1.1;margin-top:1px">2</div></div>
+                <div style="flex:1;background:var(--card2);border:1px solid var(--bd);border-radius:9px;padding:7px 8px"><div style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim2);font-weight:700">Opened</div><div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--green);line-height:1.1;margin-top:1px">1</div></div>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;flex:1">
+                <div style="border-radius:11px;background:color-mix(in srgb,var(--green) 13%,transparent);border:1px solid color-mix(in srgb,var(--green) 32%,transparent)"></div>
+                <div style="border-radius:11px;background:var(--card2);border:1px solid var(--bd)"></div>
+                <div style="border-radius:11px;background:var(--card2);border:1px solid var(--bd)"></div>
+                <div style="border-radius:11px;background:var(--card2);border:1px solid var(--bd)"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--dim);letter-spacing:.06em">A · TOAST BANNER</div>
+      </div>
+
+      <!-- FLASH -->
+      <div style="display:flex;flex-direction:column;align-items:center;gap:11px">
+        <div style="padding:7px;background:#040405;border-radius:20px;box-shadow:0 14px 40px rgba(0,0,0,.55)">
+          <div style="width:240px;height:320px;border-radius:14px;overflow:hidden;position:relative;font-family:var(--sans);display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(120% 80% at 50% 42%,color-mix(in srgb,var(--green) 38%,#0b0b0c),#0b0b0c 78%)">
+            <div style="width:104px;height:104px;border-radius:50%;background:var(--green);display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 14px color-mix(in srgb,var(--green) 22%,transparent),0 14px 40px rgba(0,0,0,.4)">
+              <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#06140c" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+            </div>
+            <div style="font-size:22px;font-weight:800;color:#fff;margin-top:26px">Bought</div>
+            <div style="font-size:13px;color:rgba(255,255,255,.82);margin-top:6px">Heinz Tomato Ketchup</div>
+            <div style="margin-top:14px;padding:5px 13px;border-radius:20px;background:rgba(255,255,255,.12);font-size:12px;color:#fff;font-weight:600">Stock <span style="font-family:var(--mono)">3 → 4</span></div>
+          </div>
+        </div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--dim);letter-spacing:.06em">B · COLOUR FLASH</div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

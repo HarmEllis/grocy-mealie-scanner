@@ -1,0 +1,64 @@
+# Flash: FNK0104AB ships a 16 MB 25VQ128.
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+
+# PSRAM: ESP32-S3R8 = 8 MB octal PSRAM. LVGL draw buffers and the larger
+# JSON/scan buffers live here.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+
+# Partition layout: custom 2-slot OTA CSV (firmware/partitions.csv), 3 MB
+# per slot on the 16 MB flash.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# OTA download path: bundled Mozilla root CAs so esp_https_ota can validate
+# github.com / objects.githubusercontent.com without shipping a per-host PEM.
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
+
+# Mark a newly OTA-installed image as PENDING_VERIFY at boot; firmware calls
+# esp_ota_mark_app_valid_cancel_rollback() once a scan→render cycle succeeds.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# app_main runs WiFi setup, the app event loop, HTTP + JSON parsing.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+
+# WiFi
+CONFIG_ESP_WIFI_SOFTAP_SUPPORT=y
+
+# USB-Serial-JTAG CDC as secondary log console (UART0 stays primary).
+CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG=y
+
+# NVS encryption off (home LAN use case)
+CONFIG_NVS_ENCRYPTION=n
+
+# SoftAP compatibility (ESP32-S3): disable AMPDU RX/TX to fix S2/S3 SoftAP
+# incompatibility with phones/PCs during provisioning. See ESP-IDF #13508.
+CONFIG_ESP_WIFI_AMPDU_TX_ENABLED=n
+CONFIG_ESP_WIFI_AMPDU_RX_ENABLED=n
+
+# HTTPD / provisioning portal
+CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024
+
+# Task stacks bumped for the SoftAP captive-portal flow (SoftAP + DHCP server
+# + captive DNS + httpd all active during provisioning).
+CONFIG_LWIP_TCPIP_TASK_STACK_SIZE=5120
+CONFIG_ESP_IPC_TASK_STACK_SIZE=4096
+CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE=4096
+CONFIG_ESP_TIMER_TASK_STACK_SIZE=4608
+
+# LVGL
+CONFIG_LV_CONF_SKIP=y
+CONFIG_LV_COLOR_DEPTH_16=y
+CONFIG_LV_USE_QRCODE=y
+CONFIG_LV_FONT_MONTSERRAT_10=y
+CONFIG_LV_FONT_MONTSERRAT_12=y
+CONFIG_LV_FONT_MONTSERRAT_14=y
+CONFIG_LV_FONT_MONTSERRAT_16=y
+CONFIG_LV_FONT_MONTSERRAT_18=y
+CONFIG_LV_FONT_MONTSERRAT_20=y
+CONFIG_LV_FONT_MONTSERRAT_22=y
+CONFIG_LV_FONT_MONTSERRAT_24=y
+
+# Log level
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y

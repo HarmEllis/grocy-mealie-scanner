@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # OTA-breaking firmware changes (binary > 3 MB OTA slot, partition-table
+  # CSV regressed) are only catchable by an actual firmware build. Pre-merge
+  # guardrail so the release pipeline never finds out about it at tag time.
+  firmware:
+    name: firmware / build + ota guards
+    runs-on: ubuntu-24.04
+    container:
+      image: espressif/idf:release-v5.3
+    # Same IDF version as pages.yml so a green PR == a buildable release.
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Mark workspace as safe (container UID mismatch)
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Cache ESP-IDF managed components
+        uses: actions/cache@v4
+        with:
+          path: firmware/managed_components
+          key: managed-components-${{ hashFiles('firmware/dependencies.lock') }}
+
+      - name: Build firmware (esp32s3)
+        shell: bash
+        run: |
+          set -euo pipefail
+          . "$IDF_PATH/export.sh"
+          cd firmware
+          idf.py set-target esp32s3
+          idf.py build
+
+      - name: Assert OTA partition layout
+        shell: bash
+        run: |
+          set -euo pipefail
+          . "$IDF_PATH/export.sh"
+          cd firmware
+          # ota_0 + ota_1 must be present in the effective partition table.
+          idf.py partition-table | tee /tmp/parttable.txt
+          grep -Eq '^ota_0,[[:space:]]*app,' /tmp/parttable.txt
+          grep -Eq '^ota_1,[[:space:]]*app,' /tmp/parttable.txt
+          grep -q '^CONFIG_PARTITION_TABLE_CUSTOM=y$' sdkconfig
+
+      - name: Assert app binary fits OTA slot
+        shell: bash
+        run: |
+          set -euo pipefail
+          size=$(stat -c%s firmware/build/grocy-mealie-scanner.bin)
+          echo "grocy-mealie-scanner.bin size: ${size} bytes"
+          # 3 MiB OTA slot (16 MB flash), with a small safety margin for the
+          # image header / SHA256 trailer. Adjust together with the partition
+          # CSV if you ever resize the slots.
+          if [ "$size" -ge 3100000 ]; then
+            echo "::error::Firmware binary ${size} bytes exceeds 3 MB OTA slot" >&2
+            exit 1
+          fi

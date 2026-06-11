@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#161617}
+  @keyframes scanmove{0%{transform:translateY(-46px);opacity:.2}50%{opacity:1}100%{transform:translateY(46px);opacity:.2}}
+  @keyframes pulsedot{0%,100%{opacity:.55}50%{opacity:1}}
+  @keyframes flashpop{0%{transform:scale(.6);opacity:0}55%{transform:scale(1.06)}100%{transform:scale(1);opacity:1}}
+  @keyframes ringpulse{0%{box-shadow:0 0 0 0 var(--rc),0 14px 40px rgba(0,0,0,.4)}100%{box-shadow:0 0 0 22px transparent,0 14px 40px rgba(0,0,0,.4)}}
+</style>
+</helmet>
+
+<div style="--device:#0b0b0c;--card2:#1e1e22;--bd:rgba(255,255,255,.08);--bd2:rgba(255,255,255,.14);--tx:#ededf0;--dim:#8b8b93;--dim2:#5e5e66;--amber:#f5c13d;--green:#35c98c;--coral:#e8674a;--blue:#5aa0ef;--gold:#f0a93a;--mono:'JetBrains Mono',ui-monospace,monospace;--sans:'Plus Jakarta Sans',system-ui,sans-serif;background:#161617;min-height:100vh;padding:40px 44px 64px;font-family:'Plus Jakarta Sans',system-ui,sans-serif;color:#ededf0;display:flex;flex-direction:column;align-items:center">
+
+  <!-- HEADER -->
+  <div style="display:flex;align-items:flex-start;gap:16px;width:100%;max-width:760px;margin-bottom:30px">
+    <div style="width:44px;height:44px;border-radius:11px;background:#f5c13d;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 6px 20px rgba(245,193,61,.25)">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0b0b0c" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h2M3 7v10M7 7v10M9 7v10M12 7v10M15 7v10M17 7v10M21 7v10"/></svg>
+    </div>
+    <div>
+      <div style="font-size:24px;font-weight:800;letter-spacing:-.01em;line-height:1.1">Variant A — Grid tiles · Colour flash</div>
+      <div style="font-size:13.5px;color:#8b8b93;margin-top:3px;line-height:1.5">Interactive prototype at 1:1 device resolution (<span style="font-family:var(--mono);color:#b9b9c0">240&times;320</span>). Tap a tile to confirm — full-screen colour flash returns to Idle after ~2&nbsp;s.</div>
+    </div>
+  </div>
+
+  <!-- DEVICE -->
+  <div style="padding:9px;background:#040405;border-radius:24px;box-shadow:0 22px 60px rgba(0,0,0,.6),inset 0 0 0 1px rgba(255,255,255,.04)">
+    <div style="width:240px;height:320px;background:var(--device);border-radius:15px;overflow:hidden;position:relative;font-family:var(--sans)">
+
+      <!-- ===== IDLE ===== -->
+      <sc-if value="{{ isIdle }}" hint-placeholder-val="{{ true }}">
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column">
+        <div style="height:26px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-bottom:1px solid var(--bd)"><div style="display:flex;align-items:center;gap:6px"><span style="width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 7px var(--green);animation:pulsedot 2.4s ease-in-out infinite"></span><span style="font-size:10px;color:var(--dim)">Connected</span></div><span style="font-family:var(--mono);font-size:10px;color:var(--dim)">06:52</span></div>
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;cursor:pointer" onClick="{{ scanKnown }}">
+          <div style="position:relative;width:128px;height:96px;border-radius:14px;background:rgba(255,255,255,.02);display:flex;align-items:center;justify-content:center;overflow:hidden">
+            <div style="position:absolute;top:8px;left:8px;width:18px;height:18px;border-top:2px solid var(--amber);border-left:2px solid var(--amber);border-radius:4px 0 0 0"></div>
+            <div style="position:absolute;top:8px;right:8px;width:18px;height:18px;border-top:2px solid var(--amber);border-right:2px solid var(--amber);border-radius:0 4px 0 0"></div>
+            <div style="position:absolute;bottom:8px;left:8px;width:18px;height:18px;border-bottom:2px solid var(--amber);border-left:2px solid var(--amber);border-radius:0 0 0 4px"></div>
+            <div style="position:absolute;bottom:8px;right:8px;width:18px;height:18px;border-bottom:2px solid var(--amber);border-right:2px solid var(--amber);border-radius:0 0 4px 0"></div>
+            <div style="display:flex;align-items:center;gap:3px;height:46px">
+              <span style="width:3px;height:100%;background:var(--tx)"></span><span style="width:2px;height:100%;background:var(--dim)"></span><span style="width:4px;height:100%;background:var(--tx)"></span><span style="width:2px;height:100%;background:var(--dim2)"></span><span style="width:3px;height:100%;background:var(--tx)"></span><span style="width:5px;height:100%;background:var(--tx)"></span><span style="width:2px;height:100%;background:var(--dim)"></span><span style="width:3px;height:100%;background:var(--tx)"></span><span style="width:2px;height:100%;background:var(--dim2)"></span><span style="width:4px;height:100%;background:var(--tx)"></span>
+            </div>
+            <div style="position:absolute;left:10px;right:10px;height:2px;background:linear-gradient(90deg,transparent,var(--amber),transparent);box-shadow:0 0 8px var(--amber);animation:scanmove 1.9s ease-in-out infinite"></div>
+          </div>
+          <div style="font-size:17px;font-weight:700;margin-top:24px">Ready to scan</div>
+          <div style="font-size:12px;color:var(--dim);margin-top:5px;text-align:center;line-height:1.4">Point the scanner<br>at a barcode</div>
+        </div>
+        <div style="padding:9px 12px;border-top:1px solid var(--bd);display:flex;align-items:center;gap:7px"><span style="font-size:10px;color:var(--dim2);text-transform:uppercase;letter-spacing:.1em">Last</span><span style="font-size:11px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Campina Halfvolle Melk</span><span style="font-family:var(--mono);font-size:10px;color:var(--dim2);margin-left:auto">06:41</span></div>
+      </div>
+      </sc-if>
+
+      <!-- ===== PRODUCT FOUND ===== -->
+      <sc-if value="{{ isFound }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column">
+        <div style="height:26px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-bottom:1px solid var(--bd)"><div style="display:flex;align-items:center;gap:6px"><span style="width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 7px var(--green)"></span><span style="font-size:10px;color:var(--dim)">Scanned</span></div><span style="font-family:var(--mono);font-size:10px;color:var(--dim)">06:52</span></div>
+        <div style="flex:1;display:flex;flex-direction:column;padding:12px;gap:11px">
+          <div>
+            <div style="font-size:15.5px;font-weight:700;line-height:1.18;text-wrap:pretty">Heinz Tomato Ketchup</div>
+            <div style="font-size:11px;color:var(--dim);margin-top:3px">570&nbsp;g · Sauces</div>
+          </div>
+          <div style="display:flex;gap:7px">
+            <div style="flex:1;background:var(--card2);border:1px solid var(--bd);border-radius:9px;padding:7px 8px"><div style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim2);font-weight:700">In stock</div><div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--amber);line-height:1.1;margin-top:1px">3</div></div>
+            <div style="flex:1;background:var(--card2);border:1px solid var(--bd);border-radius:9px;padding:7px 8px"><div style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim2);font-weight:700">Min</div><div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--dim);line-height:1.1;margin-top:1px">2</div></div>
+            <div style="flex:1;background:var(--card2);border:1px solid var(--bd);border-radius:9px;padding:7px 8px"><div style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim2);font-weight:700">Opened</div><div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--green);line-height:1.1;margin-top:1px">1</div></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;flex:1">
+            <div onClick="{{ bought }}" style="display:flex;flex-direction:column;justify-content:space-between;padding:10px;border-radius:11px;background:rgba(53,201,140,.13);border:1px solid rgba(53,201,140,.34);cursor:pointer" style-active="transform:scale(.95);background:rgba(53,201,140,.24)"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#35c98c" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg><span style="font-size:13px;font-weight:600">Bought</span></div>
+            <div onClick="{{ opened }}" style="display:flex;flex-direction:column;justify-content:space-between;padding:10px;border-radius:11px;background:rgba(240,169,58,.13);border:1px solid rgba(240,169,58,.34);cursor:pointer" style-active="transform:scale(.95);background:rgba(240,169,58,.24)"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#f0a93a" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8l-9 5-9-5 9-5 9 5Z"/><path d="M3 8v8l9 5 9-5V8"/></svg><span style="font-size:13px;font-weight:600">Opened</span></div>
+            <div onClick="{{ consumed }}" style="display:flex;flex-direction:column;justify-content:space-between;padding:10px;border-radius:11px;background:rgba(232,103,74,.13);border:1px solid rgba(232,103,74,.34);cursor:pointer" style-active="transform:scale(.95);background:rgba(232,103,74,.24)"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#e8674a" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span style="font-size:13px;font-weight:600">Consumed</span></div>
+            <div onClick="{{ shopping }}" style="display:flex;flex-direction:column;justify-content:space-between;padding:10px;border-radius:11px;background:rgba(90,160,239,.14);border:1px solid rgba(90,160,239,.34);cursor:pointer" style-active="transform:scale(.95);background:rgba(90,160,239,.24)"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#5aa0ef" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2 3h2.2l2.3 12.2a1.6 1.6 0 0 0 1.6 1.3h8.6a1.6 1.6 0 0 0 1.6-1.3L21 7H5.2"/></svg><span style="font-size:12.5px;font-weight:600">Shopping</span></div>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ===== NOT FOUND ===== -->
+      <sc-if value="{{ isNotFound }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column">
+        <div style="height:26px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-bottom:1px solid var(--bd)"><div style="display:flex;align-items:center;gap:6px"><span style="width:6px;height:6px;border-radius:50%;background:var(--amber);box-shadow:0 0 7px var(--amber)"></span><span style="font-size:10px;color:var(--dim)">Unknown</span></div><span style="font-family:var(--mono);font-size:10px;color:var(--dim)">06:53</span></div>
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;padding:18px 14px">
+          <div style="width:54px;height:54px;border-radius:50%;background:rgba(245,193,61,.14);border:1px solid rgba(245,193,61,.38);display:flex;align-items:center;justify-content:center;margin-top:6px">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.8 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.8a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>
+          </div>
+          <div style="font-size:16px;font-weight:700;margin-top:14px">Product not found</div>
+          <div style="font-size:11.5px;color:var(--dim);margin-top:4px;text-align:center">No match in Grocy or Mealie</div>
+          <div style="margin-top:12px;padding:7px 12px;border-radius:8px;background:rgba(255,255,255,.03);border:1px solid var(--bd);font-family:var(--mono);font-size:13px;letter-spacing:.06em;color:var(--tx)">8715700110622</div>
+          <div style="margin-top:auto;width:100%;display:flex;flex-direction:column;gap:7px">
+            <div onClick="{{ bought }}" style="display:flex;align-items:center;justify-content:center;gap:7px;height:42px;border-radius:10px;background:var(--amber);color:#0b0b0c;font-size:13.5px;font-weight:700;cursor:pointer" style-active="transform:scale(.97)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0b0b0c" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>Add to Grocy</div>
+            <div onClick="{{ shopping }}" style="display:flex;align-items:center;justify-content:center;gap:7px;height:40px;border-radius:10px;background:transparent;border:1px solid var(--bd2);color:var(--tx);font-size:13px;font-weight:600;cursor:pointer" style-active="background:rgba(255,255,255,.05)">Add to shopping list</div>
+            <div onClick="{{ reset }}" style="text-align:center;font-size:12px;color:var(--dim);padding:4px;cursor:pointer">Scan again</div>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ===== COLOUR FLASH ===== -->
+      <sc-if value="{{ isFlash }}" hint-placeholder-val="{{ false }}">
+      <div onClick="{{ reset }}" style="--rc:{{ flashRingColor }};position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;background:{{ flashBg }}">
+        <div style="width:104px;height:104px;border-radius:50%;background:{{ flashColor }};display:flex;align-items:center;justify-content:center;animation:flashpop .4s cubic-bezier(.2,.8,.2,1) both,ringpulse 1s ease-out .4s both">
+          <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="{{ flashText }}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+        </div>
+        <div style="font-size:22px;font-weight:800;color:#fff;margin-top:26px">{{ flashLabel }}</div>
+        <div style="font-size:13px;color:rgba(255,255,255,.82);margin-top:6px">Heinz Tomato Ketchup</div>
+        <div style="margin-top:14px;padding:5px 13px;border-radius:20px;background:rgba(255,255,255,.13);font-size:12px;color:#fff;font-weight:600">{{ flashSub }}</div>
+      </div>
+      </sc-if>
+
+    </div>
+  </div>
+
+  <!-- CAPTION + CONTROLS -->
+  <div style="font-family:var(--mono);font-size:11px;color:var(--dim2);letter-spacing:.08em;margin-top:14px">240 × 320 · 1:1</div>
+
+  <div style="display:flex;gap:10px;margin-top:22px">
+    <div onClick="{{ scanKnown }}" style="display:flex;align-items:center;gap:8px;padding:10px 16px;border-radius:10px;background:#f5c13d;color:#0b0b0c;font-size:13px;font-weight:700;cursor:pointer" style-active="transform:scale(.97)">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0b0b0c" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v10M6.5 7v10M10 7v10M13.5 7v10M17 7v10M20.5 7v10"/></svg>
+      Simulate scan
+    </div>
+    <div onClick="{{ scanUnknown }}" style="display:flex;align-items:center;gap:8px;padding:10px 16px;border-radius:10px;background:#1e1e22;border:1px solid var(--bd2);color:var(--tx);font-size:13px;font-weight:600;cursor:pointer" style-active="background:#26262b">
+      Scan unknown code
+    </div>
+    <div onClick="{{ reset }}" style="display:flex;align-items:center;gap:8px;padding:10px 16px;border-radius:10px;background:transparent;border:1px solid var(--bd);color:var(--dim);font-size:13px;font-weight:600;cursor:pointer" style-active="background:#1c1c1f">
+      Reset
+    </div>
+  </div>
+  <div style="font-size:12px;color:var(--dim);margin-top:14px;text-align:center;max-width:420px;line-height:1.5">Tap a colour tile on the product screen to fire the confirmation flash. It auto-returns to Idle after ~2&nbsp;s — or tap the flash to dismiss now.</div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:909,&quot;height&quot;:620},&quot;initialScreen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;idle&quot;,&quot;found&quot;,&quot;notfound&quot;,&quot;flash&quot;],&quot;default&quot;:&quot;idle&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  state = {
+    screen: this.props.initialScreen || 'idle',
+    flash: this.props.initialScreen === 'flash'
+      ? { color: '#35c98c', text: '#06140c', label: 'Bought', sub: 'Stock  3 → 4', glow: 'rgba(53,201,140,.42)' }
+      : null,
+  };
+
+  scanKnown() { clearTimeout(this._t); this.setState({ screen: 'found' }); }
+  scanUnknown() { clearTimeout(this._t); this.setState({ screen: 'notfound' }); }
+  reset() { clearTimeout(this._t); this.setState({ screen: 'idle', flash: null }); }
+
+  doAction(key) {
+    const map = {
+      bought:   { color: '#35c98c', text: '#06140c', label: 'Bought',        sub: 'Stock  3 → 4',     glow: 'rgba(53,201,140,.42)' },
+      opened:   { color: '#f0a93a', text: '#1a1206', label: 'Opened',        sub: 'Open  1 → 2',      glow: 'rgba(240,169,58,.42)' },
+      consumed: { color: '#e8674a', text: '#1a0a06', label: 'Consumed',      sub: 'Stock  3 → 2',     glow: 'rgba(232,103,74,.42)' },
+      shopping: { color: '#5aa0ef', text: '#06101e', label: 'Added to list', sub: 'On shopping list', glow: 'rgba(90,160,239,.42)' },
+    };
+    this.setState({ screen: 'flash', flash: map[key] });
+    clearTimeout(this._t);
+    this._t = setTimeout(() => this.reset(), 2200);
+  }
+
+  componentWillUnmount() { clearTimeout(this._t); }
+
+  renderVals() {
+    const f = this.state.flash || {};
+    return {
+      isIdle: this.state.screen === 'idle',
+      isFound: this.state.screen === 'found',
+      isNotFound: this.state.screen === 'notfound',
+      isFlash: this.state.screen === 'flash',
+      flashBg: `radial-gradient(120% 80% at 50% 42%, ${f.glow || 'transparent'}, #0b0b0c 76%)`,
+      flashColor: f.color || '#0b0b0c',
+      flashText: f.text || '#fff',
+      flashLabel: f.label || '',
+      flashSub: f.sub || '',
+      flashRingColor: f.glow || 'transparent',
+      scanKnown: () => this.scanKnown(),
+      scanUnknown: () => this.scanUnknown(),
+      reset: () => this.reset(),
+      bought: () => this.doAction('bought'),
+      opened: () => this.doAction('opened'),
+      consumed: () => this.doAction('consumed'),
+      shopping: () => this.doAction('shopping'),
+    };
+  }
+}
+</script>
+</body>
+</html>

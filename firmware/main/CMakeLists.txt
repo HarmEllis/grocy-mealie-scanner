@@ -1,0 +1,25 @@
+idf_component_register(
+    SRCS
+        main.c
+        display.c
+        ui.c
+        gm67.c
+        storage.c
+        wifi_conn.c
+        captive_dns.c
+        api_client.c
+    INCLUDE_DIRS .
+    REQUIRES
+        driver
+        esp_event
+        esp_http_client
+        esp_http_server
+        esp_netif
+        esp_timer
+        esp_wifi
+        app_update
+        json
+        lwip
+        mbedtls
+        nvs_flash
+)

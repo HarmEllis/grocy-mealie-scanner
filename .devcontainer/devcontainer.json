@@ -1,0 +1,37 @@
+{
+  "name": "grocy-mealie-scanner",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "remoteUser": "node",
+  "remoteEnv": {
+    "IDF_PATH": "/opt/esp/idf",
+    "IDF_TOOLS_PATH": "/opt/esp",
+    "IDF_PYTHON_CHECK_CONSTRAINTS": "no",
+    "IDF_CCACHE_ENABLE": "1"
+  },
+  "mounts": [
+    "source=${localEnv:HOME}/.claude,target=/home/node/.claude,type=bind,readonly",
+    "source=${localEnv:HOME}/.codex,target=/home/node/.codex,type=bind,readonly"
+  ],
+  "forwardPorts": [8080],
+  "portsAttributes": {
+    "8080": { "label": "Web flasher" }
+  },
+  "postCreateCommand": "bash -c '. /etc/profile.d/esp-idf.sh && echo \"ESP-IDF: $(idf.py --version)\"'",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "espressif.esp-idf-extension",
+        "ms-vscode.cpptools-extension-pack",
+        "Anthropic.claude-code"
+      ],
+      "settings": {
+        "idf.espIdfPath": "/opt/esp/idf",
+        "idf.toolsPath": "/opt/esp",
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  }
+}

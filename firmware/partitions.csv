@@ -1,0 +1,14 @@
+# Custom partition table for OTA on 16 MB flash (FNK0104AB ships 25VQ128).
+#
+# Same offsets for nvs/otadata/phy/app-start as eink-devdash so the web
+# flasher manifest offsets stay familiar; the two OTA slots are 3 MB each
+# (LVGL + fonts + TLS cert bundle need more headroom than the e-ink build).
+# The nvs partition must never move or grow — partition-table changes do not
+# propagate via OTA.
+#
+# Name,    Type, SubType, Offset,   Size,     Flags
+nvs,       data, nvs,     0x9000,   0x6000,
+otadata,   data, ota,     0xf000,   0x2000,
+phy_init,  data, phy,     0x11000,  0x1000,
+ota_0,     app,  ota_0,   0x20000,  0x300000,
+ota_1,     app,  ota_1,   0x320000, 0x300000,
