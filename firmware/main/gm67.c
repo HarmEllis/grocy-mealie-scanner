@@ -37,6 +37,7 @@ static void reader_task(void *arg)
     uint8_t rx[UART_RX_BUF_SIZE];
     char line[GM67_MAX_CODE_LEN];
     size_t line_len = 0;
+    bool overflow = false; /* current code exceeded the buffer; drop it whole */
     char last_code[GM67_MAX_CODE_LEN] = "";
     int64_t last_code_us = 0;
 
@@ -49,12 +50,20 @@ static void reader_task(void *arg)
                 if (line_len < sizeof(line) - 1) {
                     line[line_len++] = c;
                 } else {
-                    /* Oversized garbage; restart on the next terminator. */
-                    line_len = sizeof(line) - 1;
+                    /* Exceeds the 64-char limit: mark for a whole-payload drop
+                     * so we never submit a truncated (wrong) code. */
+                    overflow = true;
                 }
                 continue;
             }
-            if (line_len == 0) {
+            if (line_len == 0 && !overflow) {
+                continue;
+            }
+            if (overflow) {
+                ESP_LOGW(TAG, "dropping over-length scan payload (>%u chars)",
+                         (unsigned)(sizeof(line) - 1));
+                line_len = 0;
+                overflow = false;
                 continue;
             }
             line[line_len] = '\0';
@@ -82,7 +91,10 @@ static void reader_task(void *arg)
         /* A code that arrived without a trailing CR/LF is flushed once the
          * line stays idle for one read timeout. Some GM67 terminator
          * configurations send none. */
-        if (n == 0 && line_len > 0) {
+        if (n == 0 && overflow) {
+            line_len = 0;
+            overflow = false;
+        } else if (n == 0 && line_len > 0) {
             line[line_len] = '\0';
             size_t len = line_len;
             line_len = 0;
