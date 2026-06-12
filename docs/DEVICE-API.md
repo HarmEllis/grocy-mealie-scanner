@@ -159,8 +159,15 @@ Request:
   product, so the device can offer to link instead:
   `{"error":"Product already exists","product":{"id":42,"name":"…"}}`.
 
-Response (`201`): same `product` object shape as the `scan` "found" variant
-(stock numbers all 0).
+Response (`201`): the `product` object **at the response root** (not wrapped
+in a `{"product": …}` envelope, unlike `scan`) — same field shape as the
+`product` inside the `scan` "found" variant, with stock numbers all 0:
+
+```json
+{ "id": 99, "name": "Tomato Ketchup", "quantityUnit": "Piece",
+  "stockAmount": 0, "openedAmount": 0, "minStockAmount": 0,
+  "onShoppingList": false }
+```
 
 ### `POST /api/device/v1/products/{id}/barcodes`
 
@@ -168,11 +175,12 @@ Link a barcode to an existing product (the "link to suggested match" path).
 
 Request: `{ "barcode": "8715700110622" }`
 
-Response (`200`): the full `product` object (as in `scan` "found") so the
+Response (`200`): the full `product` object **at the response root** (same
+unwrapped shape as `POST /products` above, not the `scan` envelope) so the
 device can transition straight to the product screen.
 
-Barcode already linked to another product → `409` with that product in the
-body.
+Barcode already linked to another product → `409` with that product wrapped
+in the error body: `{"error":"…","product":{"id":42,"name":"…"}}`.
 
 ## Firmware-driven design constraints
 

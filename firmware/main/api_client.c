@@ -324,7 +324,10 @@ esp_err_t api_search(const char *query, api_search_result_t *out, char *errbuf)
     return ESP_OK;
 }
 
-/* POST helper shared by create + link: both answer with a full product. */
+/* POST helper shared by create + link: both answer with a full product.
+ * Unlike GET /scan (which wraps the product as {"status","product"}), the
+ * create and link endpoints return the product object at the response root
+ * (see docs/DEVICE-API.md), so parse the root JSON directly. */
 static esp_err_t post_for_product(const char *path, const char *body,
                                   api_product_t *out, char *errbuf, const char *fallback)
 {
@@ -337,7 +340,7 @@ static esp_err_t post_for_product(const char *path, const char *body,
         cJSON_Delete(json);
         return status == 409 ? ESP_ERR_INVALID_STATE : ESP_FAIL;
     }
-    parse_product(cJSON_GetObjectItemCaseSensitive(json, "product"), out);
+    parse_product(json, out);
     cJSON_Delete(json);
     return ESP_OK;
 }
