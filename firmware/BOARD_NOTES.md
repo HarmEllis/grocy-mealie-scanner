@@ -54,14 +54,24 @@ do not put the GM67 there.
 | VCC | 3V3 | |
 | GND | GND | |
 
-GM67 defaults: 9600 baud 8N1, SSI/plain-text output. The firmware does **not**
-configure the scanner — it only opens UART1 and reads decoded barcodes. The
-module must therefore already be in **continuous (auto-sense) scan mode with
-serial/TTL plain-text output at 9600 8N1**, and the trigger line is left
-unwired. On most GM67 units this is the factory default; if yours ships in
-host/command-trigger mode, set continuous mode once with the configuration
-barcode from the GM67 manual (no firmware change needed). IO3/IO2 stay free
-(candidate: GM67 buzzer/LED control or a future presence sensor).
+GM67 defaults: 9600 baud 8N1, SSI/plain-text output. At boot the firmware now
+**actively configures the module** over UART1 (serial command protocol,
+Appendix 6 of the GM67 manual): continuous scan, Code-only payload, CR LF
+terminator, STX/ETX off, raw (non-packet) output, good-read beep, 3 s scan
+time. See `docs/GM67-IMPROVEMENT-PLAN.md` for the design and exact byte
+sequences. This means a unit does **not** have to be pre-configured with setup
+barcodes — *provided it is reachable on TTL serial at 9600 8N1*. Configuration
+is best-effort and fail-open: a module that does not answer (wrong baud,
+USB-KBW mode, older firmware) falls through to passive reading, so the read
+path is never bricked; for such a unit the setup-barcode bootstrap from the
+manual is still needed for first contact. The trigger line stays unwired.
+IO3/IO2 stay free (future presence sensor; the buzzer/LED are driven over
+serial, so they need no extra GPIO).
+
+The GM67 serial protocol lives in `main/gm67_proto.{c,h}` as a pure,
+ESP-IDF-free layer (command tables + the reply/scan stream demultiplexer) so
+it is unit-tested on the host — run `firmware/test/run.sh` (plain `cc`, no
+devcontainer needed).
 
 ## Other on-board peripherals (unused for now)
 
@@ -74,8 +84,15 @@ barcode from the GM67 manual (no firmware change needed). IO3/IO2 stay free
 | WS2812 RGB LED | 42 (5 V supply) |
 | BOOT key | 0 |
 
-The WS2812 could mirror the action colour flash later; the speaker could
-beep on scan. Both are out of scope for v1.
+The WS2812 (GPIO42) is now the **scan-result indicator** — see `main/status_led.c`:
+a brief green/amber/coral flash (found / not-found / error) driven over RMT via
+the `espressif/led_strip` component, dimmed and auto-cleared by an esp_timer
+one-shot. It is user-toggleable from the settings screen (default on). The
+WS2812 is chosen over the GM67's own LED/buzzer for the *result* cue because the
+outcome is known only after the network round-trip (see
+`docs/GM67-IMPROVEMENT-PLAN.md` §4.2); the GM67's immediate decode beep stays the
+audio channel and is the other settings toggle. The on-board speaker/codec is
+still out of scope for v1.
 
 ## Design → LVGL notes
 
@@ -90,6 +107,12 @@ Deviations agreed with the maintainer:
   OFL, converted to LVGL bitmap fonts.
 - Extra states not in the design (provisioning, offline, OTA progress,
   link/create/search flow for unknown barcodes) reuse the same palette.
+- Settings screen (`design/Grocy-Mealie-Scanner_variant-a.html`, settings
+  state): the design's SVG gear/back icons and custom pill toggles are rendered
+  with the built-in LVGL symbol font (`LV_SYMBOL_SETTINGS`, `LV_SYMBOL_LEFT`)
+  and `lv_switch`, matching the rest of the UI. The gear sits on the idle status
+  bar; the product screen gains a back chevron there. Both feedback toggles
+  (scanner beep, status light) reach the screen from idle and persist to NVS.
 
 Palette (from the design export):
 

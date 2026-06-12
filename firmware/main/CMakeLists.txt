@@ -4,6 +4,8 @@ idf_component_register(
         display.c
         ui.c
         gm67.c
+        gm67_proto.c
+        status_led.c
         storage.c
         wifi_conn.c
         captive_dns.c

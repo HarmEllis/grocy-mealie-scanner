@@ -29,9 +29,18 @@ static void load_str(nvs_handle_t h, const char *key, char *dst, size_t cap)
     }
 }
 
+static bool load_flag(nvs_handle_t h, const char *key, bool fallback)
+{
+    uint8_t v;
+    return nvs_get_u8(h, key, &v) == ESP_OK ? v != 0 : fallback;
+}
+
 esp_err_t storage_load(app_config_t *cfg)
 {
     memset(cfg, 0, sizeof(*cfg));
+    /* Feedback toggles default on; a missing NVS key (first boot) keeps them on. */
+    cfg->beep_enabled = true;
+    cfg->light_enabled = true;
     nvs_handle_t h;
     esp_err_t err = nvs_open(NS, NVS_READONLY, &h);
     if (err == ESP_ERR_NVS_NOT_FOUND) {
@@ -44,6 +53,8 @@ esp_err_t storage_load(app_config_t *cfg)
         load_str(h, "api_url", cfg->api_url, sizeof(cfg->api_url));
         load_str(h, "api_token", cfg->api_token, sizeof(cfg->api_token));
         load_str(h, "ap_pass", cfg->ap_pass, sizeof(cfg->ap_pass));
+        cfg->beep_enabled = load_flag(h, "beep", true);
+        cfg->light_enabled = load_flag(h, "light", true);
         nvs_close(h);
     }
 
@@ -82,6 +93,20 @@ esp_err_t storage_save(const app_config_t *cfg)
         ESP_LOGI(TAG, "config saved");
     } else {
         ESP_LOGE(TAG, "config save failed: %s", esp_err_to_name(err));
+    }
+    return err;
+}
+
+esp_err_t storage_save_settings(const app_config_t *cfg)
+{
+    nvs_handle_t h;
+    ESP_RETURN_ON_ERROR(nvs_open(NS, NVS_READWRITE, &h), TAG, "open");
+    esp_err_t err = nvs_set_u8(h, "beep", cfg->beep_enabled ? 1 : 0);
+    if (err == ESP_OK) err = nvs_set_u8(h, "light", cfg->light_enabled ? 1 : 0);
+    if (err == ESP_OK) err = nvs_commit(h);
+    nvs_close(h);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "settings save failed: %s", esp_err_to_name(err));
     }
     return err;
 }

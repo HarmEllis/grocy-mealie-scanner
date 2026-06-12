@@ -13,7 +13,10 @@ typedef enum {
     UI_EVT_OPEN_SEARCH,
     UI_EVT_SEARCH_QUERY,     /* arg.text */
     UI_EVT_SEARCH_PICK,      /* arg.product_id */
-    UI_EVT_DISMISS,          /* "scan again" / flash tapped / back */
+    UI_EVT_DISMISS,          /* "scan again" / flash tapped / back to idle */
+    UI_EVT_OPEN_SETTINGS,    /* gear tapped on the idle status bar */
+    UI_EVT_TOGGLE_BEEP,      /* scanner-beep row tapped on the settings screen */
+    UI_EVT_TOGGLE_LIGHT,     /* status-light row tapped on the settings screen */
 } ui_event_type_t;
 
 typedef struct {
@@ -43,3 +46,4 @@ void ui_show_proposal(const char *initial_name);
 void ui_show_search(void);
 void ui_show_search_results(const api_search_result_t *results);
 void ui_show_error(const char *message);
+void ui_show_settings(bool beep, bool light); /* two feedback toggles + back */

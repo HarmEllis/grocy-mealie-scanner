@@ -7,6 +7,7 @@
 #include "board.h"
 #include "display.h"
 #include "gm67.h"
+#include "status_led.h"
 #include "storage.h"
 #include "ui.h"
 #include "wifi_conn.h"
@@ -56,6 +57,7 @@ typedef enum {
     APP_PROPOSAL,   /* create-product proposal, s_scan valid */
     APP_SEARCH,     /* product search, s_scan valid */
     APP_ERROR,      /* error screen, tap dismisses */
+    APP_SETTINGS,   /* on-device settings (beep/light toggles) */
 } app_state_t;
 
 static QueueHandle_t s_queue;
@@ -69,6 +71,9 @@ static uint64_t s_timeout_deadline = UINT64_MAX;
 static app_state_t s_state = APP_IDLE;
 static api_product_t s_product;
 static api_scan_result_t s_scan;
+/* Loaded once at boot; the settings screen mutates the two feedback flags and
+ * persists them, so it lives at file scope rather than on app_main's stack. */
+static app_config_t s_cfg;
 
 /* ------------------------------------------------------------------ */
 /* Producers (other tasks)                                             */
@@ -120,12 +125,14 @@ static void go_idle(void)
 
 static void show_error(const char *message)
 {
+    status_led_flash(STATUS_LED_CORAL);
     ui_show_error(message);
     enter_state(APP_ERROR, SCREEN_TIMEOUT_MS);
 }
 
 static void show_product(const api_product_t *product)
 {
+    status_led_flash(STATUS_LED_GREEN);
     s_product = *product;
     ui_set_last_scan(product->name);
     ui_show_product(product);
@@ -156,6 +163,7 @@ static void handle_scan(const char *barcode)
     if (s_scan.status == API_SCAN_FOUND) {
         show_product(&s_scan.product);
     } else {
+        status_led_flash(STATUS_LED_AMBER);
         ui_show_not_found(&s_scan);
         enter_state(APP_NOT_FOUND, SCREEN_TIMEOUT_MS);
     }
@@ -249,6 +257,24 @@ static void handle_ui(const ui_event_t *evt)
     case UI_EVT_SEARCH_PICK:
         handle_link(evt->product_id);
         break;
+    case UI_EVT_OPEN_SETTINGS:
+        ui_show_settings(s_cfg.beep_enabled, s_cfg.light_enabled);
+        enter_state(APP_SETTINGS, SCREEN_TIMEOUT_MS);
+        break;
+    case UI_EVT_TOGGLE_BEEP:
+        s_cfg.beep_enabled = !s_cfg.beep_enabled;
+        storage_save_settings(&s_cfg);
+        gm67_set_beep(s_cfg.beep_enabled); /* best-effort runtime PARAM_SEND */
+        ui_show_settings(s_cfg.beep_enabled, s_cfg.light_enabled);
+        enter_state(APP_SETTINGS, SCREEN_TIMEOUT_MS); /* re-arm the idle fallback */
+        break;
+    case UI_EVT_TOGGLE_LIGHT:
+        s_cfg.light_enabled = !s_cfg.light_enabled;
+        storage_save_settings(&s_cfg);
+        status_led_set_enabled(s_cfg.light_enabled);
+        ui_show_settings(s_cfg.beep_enabled, s_cfg.light_enabled);
+        enter_state(APP_SETTINGS, SCREEN_TIMEOUT_MS);
+        break;
     case UI_EVT_DISMISS:
         go_idle();
         break;
@@ -303,11 +329,16 @@ void app_main(void)
 {
     ESP_ERROR_CHECK(storage_init());
 
-    app_config_t cfg;
-    ESP_ERROR_CHECK(storage_load(&cfg));
+    ESP_ERROR_CHECK(storage_load(&s_cfg));
 
     ESP_ERROR_CHECK(display_init());
     ESP_ERROR_CHECK(ui_init(on_ui_event));
+
+    /* Scan-result LED; the persisted toggle decides whether flashes show. A
+     * failure here is non-fatal — the device works without the indicator. */
+    if (status_led_init() == ESP_OK) {
+        status_led_set_enabled(s_cfg.light_enabled);
+    }
 
     gpio_config_t boot_cfg = {
         .pin_bit_mask = 1ULL << BOARD_PIN_BOOT_KEY,
@@ -317,17 +348,17 @@ void app_main(void)
     gpio_config(&boot_cfg);
     xTaskCreate(reset_button_task, "reset_btn", 2048, NULL, 2, NULL);
 
-    if (!storage_is_provisioned(&cfg)) {
+    if (!storage_is_provisioned(&s_cfg)) {
         char ap_ssid[16];
         ui_show_connecting("Starting setup...");
-        ESP_ERROR_CHECK(wifi_prov_run(&cfg, ap_ssid, sizeof(ap_ssid)));
-        ui_show_provisioning(ap_ssid, cfg.ap_pass);
+        ESP_ERROR_CHECK(wifi_prov_run(&s_cfg, ap_ssid, sizeof(ap_ssid)));
+        ui_show_provisioning(ap_ssid, s_cfg.ap_pass);
         /* The portal's POST handler saves the config and reboots. */
         vTaskDelay(portMAX_DELAY);
     }
 
     ui_show_connecting("Connecting to WiFi...");
-    esp_err_t ret = wifi_conn_start(&cfg, WIFI_TIMEOUT_MS);
+    esp_err_t ret = wifi_conn_start(&s_cfg, WIFI_TIMEOUT_MS);
     if (ret != ESP_OK) {
         /* Auto-reconnect keeps trying in the background; tell the user and
          * fall through to idle so a later reconnect just works. */
@@ -336,7 +367,7 @@ void app_main(void)
     ui_set_connected(wifi_conn_is_connected());
     start_sntp();
 
-    api_client_init(&cfg);
+    api_client_init(&s_cfg);
 
     s_queue = xQueueCreate(8, sizeof(app_event_t));
     configASSERT(s_queue != NULL);
@@ -364,6 +395,10 @@ void app_main(void)
     }
 
     ESP_ERROR_CHECK(gm67_init(on_scan, SCAN_DEBOUNCE_MS));
+    /* Boot config always enables the GM67 beep; honour a persisted "off". */
+    if (!s_cfg.beep_enabled) {
+        gm67_set_beep(false);
+    }
 
     /* Display up, WiFi attempted, scanner task running: this image works.
      * Without this an OTA-installed build rolls back on next reboot. */

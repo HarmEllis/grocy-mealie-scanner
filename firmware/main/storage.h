@@ -15,6 +15,8 @@ typedef struct {
     char api_url[STORAGE_URL_LEN];    /* base URL incl. scheme, no trailing / */
     char api_token[STORAGE_TOKEN_LEN];
     char ap_pass[STORAGE_AP_PASS_LEN]; /* SoftAP password, generated once */
+    bool beep_enabled;  /* GM67 good-read beep (settings screen; default on) */
+    bool light_enabled; /* WS2812 result flash (settings screen; default on) */
 } app_config_t;
 
 esp_err_t storage_init(void);
@@ -24,6 +26,10 @@ esp_err_t storage_load(app_config_t *cfg);
 
 /* Persists the full config in one commit. Call rarely (provisioning only). */
 esp_err_t storage_save(const app_config_t *cfg);
+
+/* Persists only the beep/light settings flags (settings screen toggles).
+ * Cheaper and rarer than storage_save; leaves the credential keys untouched. */
+esp_err_t storage_save_settings(const app_config_t *cfg);
 
 /* Wipes the config (factory reset via long BOOT press). */
 esp_err_t storage_erase(void);

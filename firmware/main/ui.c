@@ -30,6 +30,7 @@ static const char *TAG = "ui";
 
 static ui_event_cb_t s_cb;
 static lv_obj_t *s_screen;        /* single root screen, rebuilt per state */
+static lv_obj_t *s_status_bar;    /* standard status bar, or NULL on bare screens */
 static lv_obj_t *s_status_dot;
 static lv_obj_t *s_status_label;
 static lv_obj_t *s_status_clock;
@@ -55,6 +56,30 @@ static void emit(ui_event_type_t type, api_action_t action, int product_id,
         strlcpy(evt.text, text, sizeof(evt.text));
     }
     s_cb(&evt);
+}
+
+/* Defined further down with the other not-found/search callbacks. */
+static void dismiss_cb(lv_event_t *e);
+
+static void open_settings_cb(lv_event_t *e)
+{
+    (void)e;
+    emit(UI_EVT_OPEN_SETTINGS, 0, 0, NULL);
+}
+
+/* A tappable text/symbol affordance on the status bar (gear, back chevron). */
+static lv_obj_t *add_bar_icon(const char *symbol, lv_align_t align, int dx,
+                              lv_event_cb_t cb)
+{
+    lv_obj_t *icon = lv_label_create(s_status_bar);
+    lv_label_set_text(icon, symbol);
+    lv_obj_set_style_text_font(icon, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(icon, COL_DIM, 0);
+    lv_obj_align(icon, align, dx, 0);
+    lv_obj_add_flag(icon, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_ext_click_area(icon, 8);
+    lv_obj_add_event_cb(icon, cb, LV_EVENT_CLICKED, NULL);
+    return icon;
 }
 
 /* ------------------------------------------------------------------ */
@@ -90,6 +115,7 @@ static lv_obj_t *screen_reset(const char *status_text, lv_color_t dot_color,
                               bool with_status_bar)
 {
     lv_obj_clean(s_screen);
+    s_status_bar = NULL;
     s_status_dot = NULL;
     s_status_label = NULL;
     s_status_clock = NULL;
@@ -108,6 +134,7 @@ static lv_obj_t *screen_reset(const char *status_text, lv_color_t dot_color,
         lv_obj_set_style_border_width(bar, 1, 0);
         lv_obj_set_style_border_side(bar, LV_BORDER_SIDE_BOTTOM, 0);
         lv_obj_set_style_pad_hor(bar, 12, 0);
+        s_status_bar = bar; /* screens may attach a gear/back affordance */
 
         s_status_dot = lv_obj_create(bar);
         lv_obj_remove_style_all(s_status_dot);
@@ -154,6 +181,10 @@ void ui_show_idle(void)
     lv_obj_t *content = screen_reset(s_connected ? "Connected" : "Offline",
                                      s_connected ? COL_GREEN : COL_CORAL, true);
     s_status_shows_conn = true; /* this status bar tracks live connection state */
+
+    /* Settings gear; nudge the clock left so the two don't collide. */
+    lv_obj_align(s_status_clock, LV_ALIGN_RIGHT_MID, -22, 0);
+    add_bar_icon(LV_SYMBOL_SETTINGS, LV_ALIGN_RIGHT_MID, 0, open_settings_cb);
 
     /* Scan frame: 128x96, rounded, amber corner brackets + animated line */
     lv_obj_t *frame = lv_obj_create(content);
@@ -350,6 +381,11 @@ void ui_show_product(const api_product_t *product)
     lvgl_port_lock(0);
     lv_obj_t *content = screen_reset("Scanned", COL_GREEN, true);
     lv_obj_set_style_pad_all(content, 12, 0);
+
+    /* Back chevron → idle; shift the dot + label right to make room. */
+    lv_obj_align(s_status_dot, LV_ALIGN_LEFT_MID, 18, 0);
+    lv_obj_align(s_status_label, LV_ALIGN_LEFT_MID, 30, 0);
+    add_bar_icon(LV_SYMBOL_LEFT, LV_ALIGN_LEFT_MID, 0, dismiss_cb);
 
     lv_obj_t *name = lv_label_create(content);
     lv_label_set_text(name, product->name);
@@ -899,6 +935,120 @@ void ui_show_search_results(const api_search_result_t *results)
         lv_obj_set_style_text_color(st, COL_DIM2, 0);
         lv_obj_align(st, LV_ALIGN_RIGHT_MID, 0, 0);
     }
+    lvgl_port_unlock();
+}
+
+/* ------------------------------------------------------------------ */
+/* Settings                                                            */
+/* ------------------------------------------------------------------ */
+
+static void toggle_beep_cb(lv_event_t *e)
+{
+    (void)e;
+    emit(UI_EVT_TOGGLE_BEEP, 0, 0, NULL);
+}
+
+static void toggle_light_cb(lv_event_t *e)
+{
+    (void)e;
+    emit(UI_EVT_TOGGLE_LIGHT, 0, 0, NULL);
+}
+
+/* One toggle card: title + subtitle + a state-only switch (the whole row is the
+ * tap target, so the switch itself does not handle clicks). */
+static void make_settings_row(lv_obj_t *parent, int y, const char *title,
+                              const char *subtitle, bool on, lv_event_cb_t cb)
+{
+    lv_obj_t *row = lv_obj_create(parent);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_size(row, 212, 56);
+    lv_obj_set_pos(row, 0, y);
+    lv_obj_set_style_radius(row, 11, 0);
+    lv_obj_set_style_bg_color(row, COL_CARD, 0);
+    lv_obj_set_style_bg_opa(row, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(row, COL_BORDER, 0);
+    lv_obj_set_style_border_width(row, 1, 0);
+    lv_obj_set_style_pad_hor(row, 12, 0);
+    lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_bg_color(row, lv_color_hex(0x26262b), LV_STATE_PRESSED);
+    lv_obj_add_event_cb(row, cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *t = lv_label_create(row);
+    lv_label_set_text(t, title);
+    lv_obj_set_style_text_font(t, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(t, COL_TEXT, 0);
+    lv_obj_align(t, LV_ALIGN_LEFT_MID, 0, -9);
+
+    lv_obj_t *s = lv_label_create(row);
+    lv_label_set_text(s, subtitle);
+    lv_obj_set_style_text_font(s, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_color(s, COL_DIM, 0);
+    lv_obj_align(s, LV_ALIGN_LEFT_MID, 0, 9);
+
+    lv_obj_t *sw = lv_switch_create(row);
+    lv_obj_set_size(sw, 44, 24);
+    lv_obj_align(sw, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_remove_flag(sw, LV_OBJ_FLAG_CLICKABLE); /* the row owns the tap */
+    lv_obj_set_style_bg_color(sw, lv_color_hex(0x2a2a2f), 0);
+    lv_obj_set_style_bg_color(sw, COL_GREEN, LV_PART_INDICATOR | LV_STATE_CHECKED);
+    if (on) {
+        lv_obj_add_state(sw, LV_STATE_CHECKED);
+    }
+}
+
+void ui_show_settings(bool beep, bool light)
+{
+    lvgl_port_lock(0);
+    lv_obj_t *content = screen_reset(NULL, COL_TEXT, false);
+
+    /* Custom header (back chevron + centered title) per the design settings
+     * screen — no connection dot or clock here. */
+    lv_obj_t *bar = lv_obj_create(content);
+    lv_obj_remove_style_all(bar);
+    lv_obj_set_size(bar, 240, STATUS_BAR_H);
+    lv_obj_set_pos(bar, 0, 0);
+    lv_obj_set_style_border_color(bar, COL_BORDER, 0);
+    lv_obj_set_style_border_width(bar, 1, 0);
+    lv_obj_set_style_border_side(bar, LV_BORDER_SIDE_BOTTOM, 0);
+    lv_obj_set_style_pad_hor(bar, 12, 0);
+
+    lv_obj_t *back = lv_label_create(bar);
+    lv_label_set_text(back, LV_SYMBOL_LEFT " Back");
+    lv_obj_set_style_text_font(back, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_color(back, COL_DIM, 0);
+    lv_obj_align(back, LV_ALIGN_LEFT_MID, 0, 0);
+    lv_obj_add_flag(back, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_ext_click_area(back, 10);
+    lv_obj_add_event_cb(back, dismiss_cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *title = lv_label_create(bar);
+    lv_label_set_text(title, "Settings");
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(title, COL_TEXT, 0);
+    lv_obj_center(title);
+
+    lv_obj_t *body = lv_obj_create(content);
+    lv_obj_remove_style_all(body);
+    lv_obj_set_size(body, 240, 320 - STATUS_BAR_H);
+    lv_obj_set_pos(body, 0, STATUS_BAR_H);
+    lv_obj_set_style_pad_hor(body, 14, 0);
+
+    lv_obj_t *section = lv_label_create(body);
+    lv_label_set_text(section, "SCAN FEEDBACK");
+    lv_obj_set_style_text_font(section, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_color(section, COL_DIM2, 0);
+    lv_obj_set_pos(section, 2, 14);
+
+    make_settings_row(body, 34, "Scanner beep", "GM67 decode tone", beep, toggle_beep_cb);
+    make_settings_row(body, 98, "Status light", "WS2812 result flash", light, toggle_light_cb);
+
+    lv_obj_t *note = lv_label_create(body);
+    lv_label_set_text(note, "Changes apply on the next scan.");
+    lv_obj_set_style_text_font(note, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_color(note, COL_DIM2, 0);
+    lv_obj_set_width(note, 212);
+    lv_obj_set_style_text_align(note, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(note, LV_ALIGN_BOTTOM_MID, 0, -16);
     lvgl_port_unlock();
 }
 
