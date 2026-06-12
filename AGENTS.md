@@ -40,6 +40,21 @@ docker exec -u node <container> bash -c "source /etc/profile.d/esp-idf.sh && <co
 | Set target (once after clean) | `cd /workspaces/grocy-mealie-scanner/firmware && idf.py set-target esp32s3` |
 | Start flash server | `cd /workspaces/grocy-mealie-scanner/flash-server && bash serve.sh` |
 
+## Demo mode
+
+`CONFIG_GMS_DEMO_MODE` (under `idf.py menuconfig` → "Grocy-Mealie scanner")
+builds a self-contained demo image: no WiFi, no provisioning, no backend. The
+real `api_client.c` is swapped for `api_client_demo.c`, which serves canned
+product fixtures and keeps stock in RAM, so the whole UI flow (found product,
+actions with live before/after counts, unknown barcode → link/create/search,
+error screen) can be shown offline. Boot goes straight to idle; a **short
+press of the BOOT button** injects the next scenario in a fixed cycle, so the
+flow works with no GM67 module and no printed barcode. A real GM67 scan also
+works — any code resolves to a fixture or a generated product.
+
+Keep `CONFIG_GMS_DEMO_MODE` **off** for production firmware that talks to
+grocy-mealie-sync.
+
 ## Project structure
 
 ```

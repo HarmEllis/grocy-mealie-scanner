@@ -82,3 +82,12 @@ esp_err_t api_create_product(const char *name, const char *barcode,
                              api_product_t *out, char *errbuf);
 esp_err_t api_link_barcode(int product_id, const char *barcode,
                            api_product_t *out, char *errbuf);
+
+#if CONFIG_GMS_DEMO_MODE
+/* Demo build only (api_client_demo.c): returns the next synthetic barcode in
+ * a fixed scenario cycle (product -> rich not-found -> product -> bare
+ * not-found -> simulated error -> ...). main.c feeds it to the scan path on a
+ * short BOOT press so the whole flow can be shown without the GM67 or a
+ * printed code. The returned pointer is to static storage; copy if retained. */
+const char *demo_next_barcode(void);
+#endif

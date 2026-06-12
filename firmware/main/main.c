@@ -25,6 +25,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
 #include <time.h>
 
 static const char *TAG = "main";
@@ -288,10 +289,17 @@ static void handle_ui(const ui_event_t *evt)
 static void status_tick(void *arg)
 {
     (void)arg;
+#if CONFIG_GMS_DEMO_MODE
+    ui_set_connected(true); /* no WiFi to poll; keep the bar "online" */
+#else
     ui_set_connected(wifi_conn_is_connected());
+#endif
 }
 
-/* Long-press BOOT (5 s) = factory reset. Polling at 100 ms is plenty. */
+/* BOOT button. Long-press (5 s) = factory reset on every build. In a demo
+ * build a short press (released before the 5 s threshold) injects the next
+ * scenario barcode, so the whole flow can be shown without the GM67 or a
+ * printed code. Polling at 100 ms is plenty. */
 static void reset_button_task(void *arg)
 {
     (void)arg;
@@ -305,12 +313,18 @@ static void reset_button_task(void *arg)
                 esp_restart();
             }
         } else {
+#if CONFIG_GMS_DEMO_MODE
+            if (held_ms > 0 && held_ms < FACTORY_RESET_HOLD_MS) {
+                on_scan(demo_next_barcode());
+            }
+#endif
             held_ms = 0;
         }
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
+#if !CONFIG_GMS_DEMO_MODE
 static void start_sntp(void)
 {
     /* Status-bar clock. Europe/Amsterdam with DST rules. */
@@ -320,6 +334,7 @@ static void start_sntp(void)
     cfg.start = true;
     esp_netif_sntp_init(&cfg);
 }
+#endif
 
 /* ------------------------------------------------------------------ */
 /* Boot                                                                */
@@ -348,6 +363,17 @@ void app_main(void)
     gpio_config(&boot_cfg);
     xTaskCreate(reset_button_task, "reset_btn", 2048, NULL, 2, NULL);
 
+#if CONFIG_GMS_DEMO_MODE
+    /* Demo image: no provisioning, no WiFi, no API ping. Show the bar as
+     * connected and seed a plausible wall clock so the idle screen looks
+     * live, then fall straight through to idle below. */
+    ESP_LOGW(TAG, "DEMO MODE: skipping provisioning, WiFi and API");
+    ui_set_connected(true);
+    struct timeval demo_now = { .tv_sec = 1750000000 }; /* 2025-06-15 ~14:46 UTC */
+    settimeofday(&demo_now, NULL);
+    setenv("TZ", "CET-1CEST,M3.5.0,M10.5.0/3", 1);
+    tzset();
+#else
     if (!storage_is_provisioned(&s_cfg)) {
         char ap_ssid[16];
         ui_show_connecting("Starting setup...");
@@ -366,6 +392,7 @@ void app_main(void)
     }
     ui_set_connected(wifi_conn_is_connected());
     start_sntp();
+#endif
 
     api_client_init(&s_cfg);
 
@@ -386,6 +413,9 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_timer_create(&status_args, &status_timer));
     ESP_ERROR_CHECK(esp_timer_start_periodic(status_timer, 5 * 1000 * 1000));
 
+#if CONFIG_GMS_DEMO_MODE
+    go_idle();
+#else
     char err[API_ERR_LEN];
     if (wifi_conn_is_connected() && api_ping(err) != ESP_OK) {
         ESP_LOGW(TAG, "api ping failed: %s", err);
@@ -393,6 +423,7 @@ void app_main(void)
     } else {
         go_idle();
     }
+#endif
 
     ESP_ERROR_CHECK(gm67_init(on_scan, SCAN_DEBOUNCE_MS));
     /* Boot config always enables the GM67 beep; honour a persisted "off". */

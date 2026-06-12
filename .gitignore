@@ -8,6 +8,7 @@ dist/
 
 # ESP-IDF build artifacts
 firmware/build/
+firmware/build_*/
 firmware/managed_components/
 firmware/sdkconfig
 firmware/sdkconfig.old

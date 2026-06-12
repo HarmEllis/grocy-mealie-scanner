@@ -26,7 +26,9 @@ the same repo use different pins — always take the `FNK0104AB` branch of the
 
 Panel quirks (from the TFT_eSPI setup): **BGR** colour order and
 **inversion ON**. Resolution 240×320; we run portrait (no rotation needed,
-the native orientation already is 240 wide × 320 tall).
+the native orientation already is 240 wide × 320 tall). The panel X axis is
+mirrored in software to match the board's physical orientation. Touch uses
+its native X orientation.
 
 ## Touch — FT6336U, I2C addr 0x38
 
@@ -99,8 +101,9 @@ still out of scope for v1.
 The UI follows `design/Grocy-Mealie-Scanner_variant-a.html` (1:1 240×320).
 Deviations agreed with the maintainer:
 
-- The colour-flash radial gradient + ring pulse are approximated with a
-  pre-rendered per-colour background image + an LVGL arc animation.
+- The colour-flash radial gradient + ring pulse are reduced to a static
+  colour badge because large translucent transforms overload software
+  rendering on the ESP32-S3.
 - The flash screen is shown only after the API call succeeds and shows the
   real old→new amounts; a "saving…" state bridges tap→response.
 - Fonts: Plus Jakarta Sans (text) and JetBrains Mono (numbers/codes), both

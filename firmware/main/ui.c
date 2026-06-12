@@ -489,12 +489,6 @@ static void flash_dismiss_cb(lv_event_t *e)
     emit(UI_EVT_DISMISS, 0, 0, NULL);
 }
 
-static void flash_pop_anim(void *obj, int32_t v)
-{
-    /* 0..100 → scale 0.6..1.0 with a small overshoot via the path below */
-    lv_obj_set_style_transform_scale((lv_obj_t *)obj, 154 + v, 0); /* 256 = 1.0 */
-}
-
 void ui_show_flash(const api_action_result_t *result)
 {
     static const char *labels[] = {
@@ -513,12 +507,12 @@ void ui_show_flash(const api_action_result_t *result)
     case API_ACTION_CONSUME:
         fmt_amount(b, sizeof(b), result->stock_before);
         fmt_amount(a, sizeof(a), result->stock_after);
-        snprintf(sub, sizeof(sub), "Stock  %s → %s", b, a);
+        snprintf(sub, sizeof(sub), "Stock  %s -> %s", b, a);
         break;
     case API_ACTION_OPEN:
         fmt_amount(b, sizeof(b), result->opened_before);
         fmt_amount(a, sizeof(a), result->opened_after);
-        snprintf(sub, sizeof(sub), "Open  %s → %s", b, a);
+        snprintf(sub, sizeof(sub), "Open  %s -> %s", b, a);
         break;
     case API_ACTION_SHOPPING_LIST:
     default:
@@ -530,16 +524,6 @@ void ui_show_flash(const api_action_result_t *result)
     lv_obj_t *content = screen_reset(NULL, color, false);
     lv_obj_add_flag(content, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(content, flash_dismiss_cb, LV_EVENT_CLICKED, NULL);
-
-    /* Radial-gradient approximation: a large soft glow disc behind the
-     * badge (the design's radial-gradient + ring pulse, see BOARD_NOTES). */
-    lv_obj_t *glow = lv_obj_create(content);
-    lv_obj_remove_style_all(glow);
-    lv_obj_set_size(glow, 220, 220);
-    lv_obj_align(glow, LV_ALIGN_TOP_MID, 0, 24);
-    lv_obj_set_style_radius(glow, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(glow, color, 0);
-    lv_obj_set_style_bg_opa(glow, 56, 0);
 
     lv_obj_t *badge = lv_obj_create(content);
     lv_obj_remove_style_all(badge);
@@ -554,16 +538,6 @@ void ui_show_flash(const api_action_result_t *result)
     lv_obj_set_style_text_font(check, &lv_font_montserrat_24, 0);
     lv_obj_set_style_text_color(check, COL_DEVICE, 0);
     lv_obj_center(check);
-
-    /* "flashpop": scale .6 → 1.0 with overshoot */
-    lv_anim_t a2;
-    lv_anim_init(&a2);
-    lv_anim_set_var(&a2, badge);
-    lv_anim_set_exec_cb(&a2, flash_pop_anim);
-    lv_anim_set_values(&a2, 0, 102);
-    lv_anim_set_duration(&a2, 400);
-    lv_anim_set_path_cb(&a2, lv_anim_path_overshoot);
-    lv_anim_start(&a2);
 
     lv_obj_t *label = lv_label_create(content);
     lv_label_set_text(label, labels[result->action]);
@@ -829,8 +803,8 @@ void ui_show_proposal(const char *initial_name)
 
     /* On-screen keyboard opens with the name field focused (user request) */
     lv_obj_t *kb = lv_keyboard_create(content);
-    lv_obj_set_size(kb, 240, 140);
-    lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 14, 0);
+    lv_obj_set_size(kb, 212, 140);
+    lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_keyboard_set_textarea(kb, s_proposal_ta);
     lv_obj_add_state(s_proposal_ta, LV_STATE_FOCUSED);
     lvgl_port_unlock();
@@ -880,8 +854,8 @@ void ui_show_search(void)
     lv_obj_set_scroll_dir(s_search_results_box, LV_DIR_VER);
 
     lv_obj_t *kb = lv_keyboard_create(content);
-    lv_obj_set_size(kb, 240, 140);
-    lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 14, 0);
+    lv_obj_set_size(kb, 212, 140);
+    lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_keyboard_set_textarea(kb, s_search_ta);
     lv_obj_add_event_cb(kb, search_submit_cb, LV_EVENT_READY, NULL);
     lvgl_port_unlock();

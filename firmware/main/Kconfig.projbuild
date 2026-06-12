@@ -1,0 +1,22 @@
+menu "Grocy-Mealie scanner"
+
+    config GMS_DEMO_MODE
+        bool "Demo mode (no WiFi, no API, canned fixtures)"
+        default n
+        help
+            Build a self-contained demo image. The real HTTP api_client.c is
+            replaced by api_client_demo.c, which serves canned product
+            fixtures and keeps stock in RAM, so purchase/consume/open show
+            realistic before/after numbers without a backend.
+
+            In demo mode boot skips provisioning, WiFi and the API ping and
+            goes straight to the idle screen. A short press of the BOOT
+            button injects the next scenario in a fixed cycle, so the full
+            flow can be shown with no GM67 module and no printed barcode.
+            A real GM67 scan still works: any barcode resolves to a fixture
+            (known demo codes) or a generated product (everything else).
+
+            Leave this off for production firmware that talks to
+            grocy-mealie-sync.
+
+endmenu
