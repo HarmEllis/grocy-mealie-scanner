@@ -34,6 +34,7 @@ static lv_obj_t *s_status_dot;
 static lv_obj_t *s_status_label;
 static lv_obj_t *s_status_clock;
 static bool s_connected;
+static bool s_status_shows_conn; /* true only while the status bar shows Connected/Offline (idle) */
 static char s_last_scan_name[API_NAME_LEN];
 static char s_last_scan_time[8];
 static lv_timer_t *s_clock_timer;
@@ -93,6 +94,7 @@ static lv_obj_t *screen_reset(const char *status_text, lv_color_t dot_color,
     s_status_label = NULL;
     s_status_clock = NULL;
     s_search_results_box = NULL;
+    s_status_shows_conn = false; /* only ui_show_idle re-enables this */
 
     lv_obj_set_style_bg_color(s_screen, COL_DEVICE, 0);
     lv_obj_set_style_bg_opa(s_screen, LV_OPA_COVER, 0);
@@ -151,6 +153,7 @@ void ui_show_idle(void)
     lvgl_port_lock(0);
     lv_obj_t *content = screen_reset(s_connected ? "Connected" : "Offline",
                                      s_connected ? COL_GREEN : COL_CORAL, true);
+    s_status_shows_conn = true; /* this status bar tracks live connection state */
 
     /* Scan frame: 128x96, rounded, amber corner brackets + animated line */
     lv_obj_t *frame = lv_obj_create(content);
@@ -281,8 +284,16 @@ void ui_set_connected(bool connected)
 {
     s_connected = connected;
     lvgl_port_lock(0);
-    if (s_status_dot != NULL) {
-        lv_obj_set_style_bg_color(s_status_dot, connected ? COL_GREEN : COL_CORAL, 0);
+    /* The status dot/label only reflect connectivity on the idle screen.
+     * Other screens reuse the same widgets for their own status (Saving,
+     * Scanned, ...), so leave those untouched. */
+    if (s_status_shows_conn) {
+        if (s_status_dot != NULL) {
+            lv_obj_set_style_bg_color(s_status_dot, connected ? COL_GREEN : COL_CORAL, 0);
+        }
+        if (s_status_label != NULL) {
+            lv_label_set_text(s_status_label, connected ? "Connected" : "Offline");
+        }
     }
     lvgl_port_unlock();
 }
