@@ -11,7 +11,10 @@ static const char *TAG = "api";
 
 #define HTTP_TIMEOUT_MS 8000
 #define MAX_RESPONSE    4096
-#define MAX_URL         (STORAGE_URL_LEN + 128)
+/* Base URL (up to STORAGE_URL_LEN-1) plus the largest path we build: the
+ * search path[256] with a fully %-encoded query. Sized so a valid request is
+ * never silently truncated; request_json() still checks snprintf's result. */
+#define MAX_URL         (STORAGE_URL_LEN + 256)
 
 static char s_base_url[STORAGE_URL_LEN];
 static char s_auth_header[STORAGE_TOKEN_LEN + 8];
@@ -55,7 +58,11 @@ static esp_err_t request_json(const char *method, const char *path, const char *
                               int *status_out, cJSON **json_out, char *errbuf)
 {
     char url[MAX_URL];
-    snprintf(url, sizeof(url), "%s%s", s_base_url, path);
+    int url_len = snprintf(url, sizeof(url), "%s%s", s_base_url, path);
+    if (url_len < 0 || url_len >= (int)sizeof(url)) {
+        set_err(errbuf, "URL too long");
+        return ESP_ERR_INVALID_ARG;
+    }
 
     char *resp = calloc(1, MAX_RESPONSE);
     if (resp == NULL) {
