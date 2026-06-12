@@ -2,7 +2,9 @@
 
 #include "esp_err.h"
 
-#define GM67_MAX_CODE_LEN 64
+/* Buffer size: the device API permits 64-character barcodes, so reserve
+ * 64 code bytes + the NUL terminator. */
+#define GM67_MAX_CODE_LEN 65
 
 /* Called from the GM67 reader task whenever a complete barcode arrives.
  * `code` is NUL-terminated, trimmed of CR/LF, at most GM67_MAX_CODE_LEN-1
