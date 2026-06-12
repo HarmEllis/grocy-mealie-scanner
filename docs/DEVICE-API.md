@@ -190,6 +190,6 @@ in the error body: `{"error":"…","product":{"id":42,"name":"…"}}`.
   a single response (no follow-up requests needed to render).
 - All endpoints must respond within 5 s (the firmware request timeout is
   8 s); external lookups are capped server-side at 3 s.
-- The device retries idempotent GETs once; `POST`s are never auto-retried
-  (the user re-taps instead), so duplicate-action protection server-side is
-  not required for v1.
+- The device does not auto-retry: every request (GET or POST) is sent exactly
+  once and the user re-taps on failure, so duplicate-action protection
+  server-side is not required for v1.
