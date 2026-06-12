@@ -113,21 +113,25 @@ static const char PORTAL_FORM[] =
     "<label>Device token</label><input name='token' value='%s' maxlength='95'>"
     "<button type='submit'>Save &amp; reboot</button></form></body></html>";
 
-static void url_decode(char *s)
+/* URL-decode src[0..srclen) into dst, writing at most cap-1 bytes plus a NUL.
+ * Decode before bounding so a value that only fits after decoding (e.g. with
+ * %-escapes) is not falsely truncated, and a '%' escape near the end is never
+ * split: the field boundary is srclen, never the global NUL. */
+static void url_decode_field(char *dst, size_t cap, const char *src, size_t srclen)
 {
-    char *o = s;
-    for (char *p = s; *p; p++) {
-        if (*p == '+') {
-            *o++ = ' ';
-        } else if (*p == '%' && p[1] && p[2]) {
-            char hex[3] = { p[1], p[2], 0 };
-            *o++ = (char)strtol(hex, NULL, 16);
-            p += 2;
+    size_t o = 0;
+    for (size_t i = 0; i < srclen && o + 1 < cap; i++) {
+        if (src[i] == '+') {
+            dst[o++] = ' ';
+        } else if (src[i] == '%' && i + 2 < srclen) {
+            char hex[3] = { src[i + 1], src[i + 2], 0 };
+            dst[o++] = (char)strtol(hex, NULL, 16);
+            i += 2;
         } else {
-            *o++ = *p;
+            dst[o++] = src[i];
         }
     }
-    *o = '\0';
+    dst[o] = '\0';
 }
 
 static void form_get_field(const char *body, const char *key, char *dst, size_t cap)
@@ -140,12 +144,7 @@ static void form_get_field(const char *body, const char *key, char *dst, size_t 
             const char *v = p + klen + 1;
             const char *end = strchr(v, '&');
             size_t len = end ? (size_t)(end - v) : strlen(v);
-            if (len >= cap) {
-                len = cap - 1;
-            }
-            memcpy(dst, v, len);
-            dst[len] = '\0';
-            url_decode(dst);
+            url_decode_field(dst, cap, v, len);
             return;
         }
         p = strchr(p, '&');
