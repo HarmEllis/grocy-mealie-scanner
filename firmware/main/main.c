@@ -61,6 +61,7 @@ typedef enum {
 static QueueHandle_t s_queue;
 static esp_timer_handle_t s_timeout_timer;
 static uint32_t s_generation; /* bumped on every state change; stale timeouts are dropped */
+static uint32_t s_timer_generation; /* generation captured when the timeout timer was armed */
 
 static app_state_t s_state = APP_IDLE;
 static api_product_t s_product;
@@ -86,7 +87,9 @@ static void on_ui_event(const ui_event_t *ui_evt)
 static void on_timeout(void *arg)
 {
     (void)arg;
-    app_event_t evt = { .kind = APP_EVT_TIMEOUT, .generation = s_generation };
+    /* Report the generation captured when this timer was armed, not the live
+     * one: a transition may have bumped s_generation just before this fires. */
+    app_event_t evt = { .kind = APP_EVT_TIMEOUT, .generation = s_timer_generation };
     xQueueSend(s_queue, &evt, 0);
 }
 
@@ -100,6 +103,7 @@ static void enter_state(app_state_t state, uint32_t timeout_ms)
     s_generation++;
     esp_timer_stop(s_timeout_timer);
     if (timeout_ms > 0) {
+        s_timer_generation = s_generation;
         esp_timer_start_once(s_timeout_timer, (uint64_t)timeout_ms * 1000);
     }
 }
