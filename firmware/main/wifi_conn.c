@@ -173,8 +173,15 @@ static esp_err_t portal_get_handler(httpd_req_t *req)
 static esp_err_t portal_save_handler(httpd_req_t *req)
 {
     char body[640];
+    /* Reject anything that would not fit rather than parsing a truncated body:
+     * stopping the recv loop at the buffer limit would save partial fields and
+     * reboot with a corrupted config while reporting success. */
+    if (req->content_len >= sizeof(body)) {
+        httpd_resp_set_status(req, "413 Payload Too Large");
+        return httpd_resp_send(req, "Form too large", HTTPD_RESP_USE_STRLEN);
+    }
     int total = 0;
-    while (total < req->content_len && total < (int)sizeof(body) - 1) {
+    while (total < req->content_len) {
         int r = httpd_req_recv(req, body + total, sizeof(body) - 1 - total);
         if (r <= 0) {
             return httpd_resp_send_500(req);
