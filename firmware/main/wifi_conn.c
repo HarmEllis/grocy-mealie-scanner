@@ -126,12 +126,17 @@ static bool is_hex_digit(char c)
  * Decode before bounding so a value that only fits after decoding (e.g. with
  * %-escapes) is not falsely truncated, and a '%' escape near the end is never
  * split: the field boundary is srclen, never the global NUL. Returns false on
- * a malformed %XX escape or a decoded NUL byte (e.g. %00) — either would
- * silently corrupt or truncate the stored credential. */
+ * a malformed %XX escape, a decoded NUL byte (e.g. %00), or a decoded value
+ * that would not fit in cap — any of which would otherwise silently corrupt
+ * or truncate the stored credential. */
 static bool url_decode_field(char *dst, size_t cap, const char *src, size_t srclen)
 {
     size_t o = 0;
-    for (size_t i = 0; i < srclen && o + 1 < cap; i++) {
+    for (size_t i = 0; i < srclen; i++) {
+        if (o + 1 >= cap) { /* decoded value exceeds the destination */
+            dst[0] = '\0';
+            return false;
+        }
         char decoded;
         if (src[i] == '+') {
             decoded = ' ';
@@ -219,10 +224,14 @@ static esp_err_t portal_save_handler(httpd_req_t *req)
     }
     body[total] = '\0';
 
-    bool ok = form_get_field(body, "ssid", s_prov_cfg->wifi_ssid, sizeof(s_prov_cfg->wifi_ssid));
-    ok = form_get_field(body, "pass", s_prov_cfg->wifi_pass, sizeof(s_prov_cfg->wifi_pass)) && ok;
-    ok = form_get_field(body, "url", s_prov_cfg->api_url, sizeof(s_prov_cfg->api_url)) && ok;
-    ok = form_get_field(body, "token", s_prov_cfg->api_token, sizeof(s_prov_cfg->api_token)) && ok;
+    /* Parse into a copy so a malformed or incomplete request never mutates the
+     * live config; start from it to preserve fields the form does not carry
+     * (e.g. the generated ap_pass). Commit only once fully valid. */
+    app_config_t cfg = *s_prov_cfg;
+    bool ok = form_get_field(body, "ssid", cfg.wifi_ssid, sizeof(cfg.wifi_ssid));
+    ok = form_get_field(body, "pass", cfg.wifi_pass, sizeof(cfg.wifi_pass)) && ok;
+    ok = form_get_field(body, "url", cfg.api_url, sizeof(cfg.api_url)) && ok;
+    ok = form_get_field(body, "token", cfg.api_token, sizeof(cfg.api_token)) && ok;
     free(body);
 
     if (!ok) {
@@ -231,16 +240,17 @@ static esp_err_t portal_save_handler(httpd_req_t *req)
     }
 
     /* Strip a trailing slash so the API client can append paths verbatim. */
-    size_t ulen = strlen(s_prov_cfg->api_url);
-    if (ulen > 0 && s_prov_cfg->api_url[ulen - 1] == '/') {
-        s_prov_cfg->api_url[ulen - 1] = '\0';
+    size_t ulen = strlen(cfg.api_url);
+    if (ulen > 0 && cfg.api_url[ulen - 1] == '/') {
+        cfg.api_url[ulen - 1] = '\0';
     }
 
-    if (s_prov_cfg->wifi_ssid[0] == '\0' || s_prov_cfg->api_url[0] == '\0') {
+    if (cfg.wifi_ssid[0] == '\0' || cfg.api_url[0] == '\0') {
         httpd_resp_set_status(req, "400 Bad Request");
         return httpd_resp_send(req, "SSID and base URL are required", HTTPD_RESP_USE_STRLEN);
     }
 
+    *s_prov_cfg = cfg;
     esp_err_t err = storage_save(s_prov_cfg);
     if (err != ESP_OK) {
         return httpd_resp_send_500(req);
