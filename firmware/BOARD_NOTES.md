@@ -54,10 +54,14 @@ do not put the GM67 there.
 | VCC | 3V3 | |
 | GND | GND | |
 
-GM67 defaults: 9600 baud 8N1, SSI/plain-text output. The firmware configures
-continuous (auto-sense) scan mode over the serial protocol at boot, so the
-trigger line is not wired. IO3/IO2 stay free (candidate: GM67 buzzer/LED
-control or a future presence sensor).
+GM67 defaults: 9600 baud 8N1, SSI/plain-text output. The firmware does **not**
+configure the scanner — it only opens UART1 and reads decoded barcodes. The
+module must therefore already be in **continuous (auto-sense) scan mode with
+serial/TTL plain-text output at 9600 8N1**, and the trigger line is left
+unwired. On most GM67 units this is the factory default; if yours ships in
+host/command-trigger mode, set continuous mode once with the configuration
+barcode from the GM67 manual (no firmware change needed). IO3/IO2 stay free
+(candidate: GM67 buzzer/LED control or a future presence sensor).
 
 ## Other on-board peripherals (unused for now)
 
