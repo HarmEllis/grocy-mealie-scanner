@@ -21,6 +21,7 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "nvs_flash.h"
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -44,7 +45,6 @@ typedef struct {
     union {
         char barcode[GM67_MAX_CODE_LEN];
         ui_event_t ui;
-        uint32_t generation; /* APP_EVT_TIMEOUT: arm-time generation */
     };
 } app_event_t;
 
@@ -60,8 +60,11 @@ typedef enum {
 
 static QueueHandle_t s_queue;
 static esp_timer_handle_t s_timeout_timer;
-static uint32_t s_generation; /* bumped on every state change; stale timeouts are dropped */
-static uint32_t s_timer_generation; /* generation captured when the timeout timer was armed */
+/* Absolute deadline (esp_timer_get_time, us) of the current screen's timeout,
+ * or UINT64_MAX when none. Written and read only in the app task, so a stale
+ * timer callback that races a state change cannot dismiss the new screen:
+ * it just re-checks the deadline, which the new screen has pushed forward. */
+static uint64_t s_timeout_deadline = UINT64_MAX;
 
 static app_state_t s_state = APP_IDLE;
 static api_product_t s_product;
@@ -87,9 +90,9 @@ static void on_ui_event(const ui_event_t *ui_evt)
 static void on_timeout(void *arg)
 {
     (void)arg;
-    /* Report the generation captured when this timer was armed, not the live
-     * one: a transition may have bumped s_generation just before this fires. */
-    app_event_t evt = { .kind = APP_EVT_TIMEOUT, .generation = s_timer_generation };
+    /* Just nudge the app task; it validates against s_timeout_deadline so a
+     * stale fire that races a state change is harmless. */
+    app_event_t evt = { .kind = APP_EVT_TIMEOUT };
     xQueueSend(s_queue, &evt, 0);
 }
 
@@ -100,11 +103,12 @@ static void on_timeout(void *arg)
 static void enter_state(app_state_t state, uint32_t timeout_ms)
 {
     s_state = state;
-    s_generation++;
     esp_timer_stop(s_timeout_timer);
     if (timeout_ms > 0) {
-        s_timer_generation = s_generation;
+        s_timeout_deadline = esp_timer_get_time() + (uint64_t)timeout_ms * 1000;
         esp_timer_start_once(s_timeout_timer, (uint64_t)timeout_ms * 1000);
+    } else {
+        s_timeout_deadline = UINT64_MAX;
     }
 }
 
@@ -378,7 +382,7 @@ void app_main(void)
             handle_ui(&evt.ui);
             break;
         case APP_EVT_TIMEOUT:
-            if (evt.generation == s_generation && s_state != APP_IDLE) {
+            if (s_state != APP_IDLE && esp_timer_get_time() >= s_timeout_deadline) {
                 go_idle();
             }
             break;
