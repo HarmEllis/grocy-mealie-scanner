@@ -18,6 +18,10 @@ static const char *TAG = "wifi";
 
 #define CONNECTED_BIT BIT0
 
+/* Largest provisioning POST we accept. The form's decoded maxima total ~318
+ * chars; fully %-escaped that is ~980 bytes, so 1 KB covers any valid body. */
+#define PORTAL_BODY_MAX 1024
+
 static EventGroupHandle_t s_events;
 static bool s_sta_started;
 
@@ -113,28 +117,48 @@ static const char PORTAL_FORM[] =
     "<label>Device token</label><input name='token' value='%s' maxlength='95'>"
     "<button type='submit'>Save &amp; reboot</button></form></body></html>";
 
+static bool is_hex_digit(char c)
+{
+    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+}
+
 /* URL-decode src[0..srclen) into dst, writing at most cap-1 bytes plus a NUL.
  * Decode before bounding so a value that only fits after decoding (e.g. with
  * %-escapes) is not falsely truncated, and a '%' escape near the end is never
- * split: the field boundary is srclen, never the global NUL. */
-static void url_decode_field(char *dst, size_t cap, const char *src, size_t srclen)
+ * split: the field boundary is srclen, never the global NUL. Returns false on
+ * a malformed %XX escape or a decoded NUL byte (e.g. %00) — either would
+ * silently corrupt or truncate the stored credential. */
+static bool url_decode_field(char *dst, size_t cap, const char *src, size_t srclen)
 {
     size_t o = 0;
     for (size_t i = 0; i < srclen && o + 1 < cap; i++) {
+        char decoded;
         if (src[i] == '+') {
-            dst[o++] = ' ';
-        } else if (src[i] == '%' && i + 2 < srclen) {
+            decoded = ' ';
+        } else if (src[i] == '%') {
+            if (i + 2 >= srclen || !is_hex_digit(src[i + 1]) || !is_hex_digit(src[i + 2])) {
+                dst[0] = '\0';
+                return false;
+            }
             char hex[3] = { src[i + 1], src[i + 2], 0 };
-            dst[o++] = (char)strtol(hex, NULL, 16);
+            decoded = (char)strtol(hex, NULL, 16);
             i += 2;
         } else {
-            dst[o++] = src[i];
+            decoded = src[i];
         }
+        if (decoded == '\0') {
+            dst[0] = '\0';
+            return false;
+        }
+        dst[o++] = decoded;
     }
     dst[o] = '\0';
+    return true;
 }
 
-static void form_get_field(const char *body, const char *key, char *dst, size_t cap)
+/* Returns false only when the field is present but malformed; an absent field
+ * yields an empty value and is not an error (pass/token are optional). */
+static bool form_get_field(const char *body, const char *key, char *dst, size_t cap)
 {
     dst[0] = '\0';
     size_t klen = strlen(key);
@@ -144,14 +168,14 @@ static void form_get_field(const char *body, const char *key, char *dst, size_t 
             const char *v = p + klen + 1;
             const char *end = strchr(v, '&');
             size_t len = end ? (size_t)(end - v) : strlen(v);
-            url_decode_field(dst, cap, v, len);
-            return;
+            return url_decode_field(dst, cap, v, len);
         }
         p = strchr(p, '&');
         if (p != NULL) {
             p++;
         }
     }
+    return true;
 }
 
 static esp_err_t portal_get_handler(httpd_req_t *req)
@@ -172,28 +196,39 @@ static esp_err_t portal_get_handler(httpd_req_t *req)
 
 static esp_err_t portal_save_handler(httpd_req_t *req)
 {
-    char body[640];
     /* Reject anything that would not fit rather than parsing a truncated body:
-     * stopping the recv loop at the buffer limit would save partial fields and
-     * reboot with a corrupted config while reporting success. */
-    if (req->content_len >= sizeof(body)) {
+     * a partial parse would save corrupted fields and reboot while reporting
+     * success. Allocate exactly the (bounded) body so a fully %-escaped but
+     * otherwise valid form is still accepted. */
+    if (req->content_len == 0 || req->content_len > PORTAL_BODY_MAX) {
         httpd_resp_set_status(req, "413 Payload Too Large");
         return httpd_resp_send(req, "Form too large", HTTPD_RESP_USE_STRLEN);
     }
+    char *body = malloc(req->content_len + 1);
+    if (body == NULL) {
+        return httpd_resp_send_500(req);
+    }
     int total = 0;
     while (total < req->content_len) {
-        int r = httpd_req_recv(req, body + total, sizeof(body) - 1 - total);
+        int r = httpd_req_recv(req, body + total, req->content_len - total);
         if (r <= 0) {
+            free(body);
             return httpd_resp_send_500(req);
         }
         total += r;
     }
     body[total] = '\0';
 
-    form_get_field(body, "ssid", s_prov_cfg->wifi_ssid, sizeof(s_prov_cfg->wifi_ssid));
-    form_get_field(body, "pass", s_prov_cfg->wifi_pass, sizeof(s_prov_cfg->wifi_pass));
-    form_get_field(body, "url", s_prov_cfg->api_url, sizeof(s_prov_cfg->api_url));
-    form_get_field(body, "token", s_prov_cfg->api_token, sizeof(s_prov_cfg->api_token));
+    bool ok = form_get_field(body, "ssid", s_prov_cfg->wifi_ssid, sizeof(s_prov_cfg->wifi_ssid));
+    ok = form_get_field(body, "pass", s_prov_cfg->wifi_pass, sizeof(s_prov_cfg->wifi_pass)) && ok;
+    ok = form_get_field(body, "url", s_prov_cfg->api_url, sizeof(s_prov_cfg->api_url)) && ok;
+    ok = form_get_field(body, "token", s_prov_cfg->api_token, sizeof(s_prov_cfg->api_token)) && ok;
+    free(body);
+
+    if (!ok) {
+        httpd_resp_set_status(req, "400 Bad Request");
+        return httpd_resp_send(req, "Malformed form encoding", HTTPD_RESP_USE_STRLEN);
+    }
 
     /* Strip a trailing slash so the API client can append paths verbatim. */
     size_t ulen = strlen(s_prov_cfg->api_url);
