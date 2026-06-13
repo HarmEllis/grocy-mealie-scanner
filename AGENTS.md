@@ -9,6 +9,20 @@ maintainer can be in Dutch, but the moment something lands in the repo it
 switches to English. If you find existing Dutch content while editing,
 translate it as part of your change.
 
+## Cross-tool review (co-dev)
+
+All non-trivial code changes must go through a bidirectional review using the
+**co-dev skill** (available as `/co-dev` in Claude Code and as `SKILL.md` in
+`.claude/skills/co-dev/`):
+
+- Code authored by **Claude** must be reviewed by **Codex**:
+  `co-dev.sh review --tool codex`
+- Code authored by **Codex** must be reviewed by **Claude**:
+  `co-dev.sh review --tool claude`
+- Iterate with `co-dev.sh iterate` until both tools agree before committing.
+
+Run `co-dev.sh setup` first if the tmux session is not yet initialised.
+
 ## Devcontainer is mandatory
 
 All firmware build steps and flash-server commands MUST run **inside the

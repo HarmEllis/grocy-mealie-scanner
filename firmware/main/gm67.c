@@ -11,6 +11,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include <ctype.h>
+#include <stdatomic.h>
 #include <string.h>
 
 static const char *TAG = "gm67";
@@ -45,6 +46,9 @@ static SemaphoreHandle_t s_ready_sem; /* given once the task is ready */
 /* False until boot configuration completes; while false the line assembler
  * discards bytes so a pre-config scan is never surfaced. */
 static volatile bool     s_ready;
+/* Software scanning gate: set false by gm67_set_scanning(false) while the
+ * display is asleep; submit_code() drops codes until re-enabled. */
+static _Atomic bool      s_scanning_enabled = true;
 
 /* All reader/transaction state lives in the owning task and is reached from the
  * demux callbacks via its ctx pointer. */
@@ -74,6 +78,9 @@ static bool code_is_plausible(const char *code, size_t len)
 
 static void submit_code(gm67_runtime_t *rt, const char *code, size_t len, const char *how)
 {
+    if (!atomic_load(&s_scanning_enabled)) {
+        return;
+    }
     if (!code_is_plausible(code, len)) {
         ESP_LOGW(TAG, "dropping implausible scan payload (%u bytes)", (unsigned)len);
         return;
@@ -335,4 +342,10 @@ esp_err_t gm67_set_beep(bool enabled)
     memcpy(msg.bytes, cmd->bytes, cmd->len);
     msg.len = cmd->len;
     return xQueueSend(s_cmd_queue, &msg, 0) == pdTRUE ? ESP_OK : ESP_ERR_NO_MEM;
+}
+
+esp_err_t gm67_set_scanning(bool enabled)
+{
+    atomic_store(&s_scanning_enabled, enabled);
+    return ESP_OK;
 }

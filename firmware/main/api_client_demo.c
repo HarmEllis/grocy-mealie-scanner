@@ -10,6 +10,7 @@
 
 #include "api_client.h"
 
+#include "i18n.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
@@ -94,7 +95,7 @@ esp_err_t api_scan(const char *barcode, api_scan_result_t *out, char *errbuf)
     memset(out, 0, sizeof(*out));
 
     if (strcmp(barcode, BC_ERR) == 0) {
-        set_err(errbuf, "Demo: server unreachable");
+        set_err(errbuf, tr("server_unreachable"));
         return ESP_FAIL;
     }
 
@@ -152,7 +153,7 @@ esp_err_t api_action(int product_id, api_action_t action, api_action_result_t *o
 {
     api_product_t *p = find_product(product_id);
     if (p == NULL) {
-        set_err(errbuf, "Demo: unknown product");
+        set_err(errbuf, tr("demo_unknown_product"));
         return ESP_FAIL;
     }
 
@@ -216,7 +217,7 @@ esp_err_t api_create_product(const char *name, const char *barcode,
 {
     (void)barcode;
     if (s_count >= (int)(sizeof(s_products) / sizeof(s_products[0]))) {
-        set_err(errbuf, "Demo: catalogue full");
+        set_err(errbuf, tr("demo_catalogue_full"));
         return ESP_FAIL;
     }
     api_product_t *p = &s_products[s_count++];
@@ -234,7 +235,7 @@ esp_err_t api_link_barcode(int product_id, const char *barcode,
     (void)barcode;
     api_product_t *p = find_product(product_id);
     if (p == NULL) {
-        set_err(errbuf, "Demo: unknown product");
+        set_err(errbuf, tr("demo_unknown_product"));
         return ESP_FAIL;
     }
     *out = *p;

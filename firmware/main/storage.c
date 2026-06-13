@@ -1,5 +1,6 @@
 #include "storage.h"
 
+#include "i18n.h"
 #include "esp_check.h"
 #include "esp_log.h"
 #include "esp_random.h"
@@ -35,12 +36,20 @@ static bool load_flag(nvs_handle_t h, const char *key, bool fallback)
     return nvs_get_u8(h, key, &v) == ESP_OK ? v != 0 : fallback;
 }
 
+static uint32_t load_u32(nvs_handle_t h, const char *key, uint32_t fallback)
+{
+    uint32_t v;
+    return nvs_get_u32(h, key, &v) == ESP_OK ? v : fallback;
+}
+
 esp_err_t storage_load(app_config_t *cfg)
 {
     memset(cfg, 0, sizeof(*cfg));
     /* Feedback toggles default on; a missing NVS key (first boot) keeps them on. */
+    strlcpy(cfg->language, I18N_DEFAULT_LANGUAGE, sizeof(cfg->language));
     cfg->beep_enabled = true;
     cfg->light_enabled = true;
+    cfg->screen_timeout_seconds = 60; /* default: sleep after 60 s idle */
     nvs_handle_t h;
     esp_err_t err = nvs_open(NS, NVS_READONLY, &h);
     if (err == ESP_ERR_NVS_NOT_FOUND) {
@@ -53,9 +62,14 @@ esp_err_t storage_load(app_config_t *cfg)
         load_str(h, "api_url", cfg->api_url, sizeof(cfg->api_url));
         load_str(h, "api_token", cfg->api_token, sizeof(cfg->api_token));
         load_str(h, "ap_pass", cfg->ap_pass, sizeof(cfg->ap_pass));
+        load_str(h, "lang", cfg->language, sizeof(cfg->language));
         cfg->beep_enabled = load_flag(h, "beep", true);
         cfg->light_enabled = load_flag(h, "light", true);
+        cfg->screen_timeout_seconds = load_u32(h, "scrn_to", 60);
         nvs_close(h);
+    }
+    if (!i18n_language_is_supported(cfg->language)) {
+        strlcpy(cfg->language, I18N_DEFAULT_LANGUAGE, sizeof(cfg->language));
     }
 
     /* The SoftAP password is generated on first use and then sticks, so a
@@ -87,6 +101,7 @@ esp_err_t storage_save(const app_config_t *cfg)
     if (err == ESP_OK) err = nvs_set_str(h, "api_url", cfg->api_url);
     if (err == ESP_OK) err = nvs_set_str(h, "api_token", cfg->api_token);
     if (err == ESP_OK) err = nvs_set_str(h, "ap_pass", cfg->ap_pass);
+    if (err == ESP_OK) err = nvs_set_str(h, "lang", cfg->language);
     if (err == ESP_OK) err = nvs_commit(h);
     nvs_close(h);
     if (err == ESP_OK) {
@@ -103,6 +118,8 @@ esp_err_t storage_save_settings(const app_config_t *cfg)
     ESP_RETURN_ON_ERROR(nvs_open(NS, NVS_READWRITE, &h), TAG, "open");
     esp_err_t err = nvs_set_u8(h, "beep", cfg->beep_enabled ? 1 : 0);
     if (err == ESP_OK) err = nvs_set_u8(h, "light", cfg->light_enabled ? 1 : 0);
+    if (err == ESP_OK) err = nvs_set_str(h, "lang", cfg->language);
+    if (err == ESP_OK) err = nvs_set_u32(h, "scrn_to", cfg->screen_timeout_seconds);
     if (err == ESP_OK) err = nvs_commit(h);
     nvs_close(h);
     if (err != ESP_OK) {

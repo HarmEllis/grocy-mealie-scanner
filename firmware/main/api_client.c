@@ -1,5 +1,6 @@
 #include "api_client.h"
 
+#include "i18n.h"
 #include "cJSON.h"
 #include "esp_check.h"
 #include "esp_http_client.h"
@@ -60,13 +61,13 @@ static esp_err_t request_json(const char *method, const char *path, const char *
     char url[MAX_URL];
     int url_len = snprintf(url, sizeof(url), "%s%s", s_base_url, path);
     if (url_len < 0 || url_len >= (int)sizeof(url)) {
-        set_err(errbuf, "URL too long");
+        set_err(errbuf, tr("url_too_long"));
         return ESP_ERR_INVALID_ARG;
     }
 
     char *resp = calloc(1, MAX_RESPONSE);
     if (resp == NULL) {
-        set_err(errbuf, "Out of memory");
+        set_err(errbuf, tr("out_of_memory"));
         return ESP_ERR_NO_MEM;
     }
     response_acc_t acc = { .buf = resp, .len = 0 };
@@ -88,7 +89,7 @@ static esp_err_t request_json(const char *method, const char *path, const char *
     esp_http_client_handle_t client = esp_http_client_init(&cfg);
     if (client == NULL) {
         free(resp);
-        set_err(errbuf, "HTTP init failed");
+        set_err(errbuf, tr("http_init_failed"));
         return ESP_FAIL;
     }
 
@@ -108,7 +109,7 @@ static esp_err_t request_json(const char *method, const char *path, const char *
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "%s %s: %s", method, path, esp_err_to_name(err));
         free(resp);
-        set_err(errbuf, "Server unreachable");
+        set_err(errbuf, tr("server_unreachable"));
         return err;
     }
 
@@ -116,7 +117,7 @@ static esp_err_t request_json(const char *method, const char *path, const char *
     cJSON *json = cJSON_Parse(resp);
     free(resp);
     if (json == NULL) {
-        set_err(errbuf, "Invalid server response");
+        set_err(errbuf, tr("invalid_server_response"));
         return ESP_ERR_INVALID_RESPONSE;
     }
 
@@ -170,7 +171,8 @@ esp_err_t api_ping(char *errbuf)
                         TAG, "ping");
     bool ok = status == 200 && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(json, "ok"));
     if (!ok) {
-        take_server_error(json, errbuf, status == 401 ? "Invalid device token" : "Ping failed");
+        take_server_error(json, errbuf,
+                          status == 401 ? tr("invalid_device_token") : tr("ping_failed"));
     }
     cJSON_Delete(json);
     return ok ? ESP_OK : ESP_FAIL;
@@ -185,7 +187,7 @@ esp_err_t api_scan(const char *barcode, api_scan_result_t *out, char *errbuf)
     cJSON *json = NULL;
     ESP_RETURN_ON_ERROR(request_json("GET", path, NULL, &status, &json, errbuf), TAG, "scan");
     if (status != 200) {
-        take_server_error(json, errbuf, "Lookup failed");
+        take_server_error(json, errbuf, tr("lookup_failed"));
         cJSON_Delete(json);
         return ESP_FAIL;
     }
@@ -255,7 +257,7 @@ esp_err_t api_action(int product_id, api_action_t action, api_action_result_t *o
     ESP_RETURN_ON_ERROR(request_json("POST", path, body, &status, &json, errbuf),
                         TAG, "action");
     if (status != 200) {
-        take_server_error(json, errbuf, "Action failed");
+        take_server_error(json, errbuf, tr("action_failed"));
         cJSON_Delete(json);
         return status == 409 ? ESP_ERR_INVALID_STATE : ESP_FAIL;
     }
@@ -310,7 +312,7 @@ esp_err_t api_search(const char *query, api_search_result_t *out, char *errbuf)
     ESP_RETURN_ON_ERROR(request_json("GET", path, NULL, &status, &json, errbuf),
                         TAG, "search");
     if (status != 200) {
-        take_server_error(json, errbuf, "Search failed");
+        take_server_error(json, errbuf, tr("search_failed"));
         cJSON_Delete(json);
         return ESP_FAIL;
     }
@@ -361,11 +363,11 @@ esp_err_t api_create_product(const char *name, const char *barcode,
     char *body_str = cJSON_PrintUnformatted(body);
     cJSON_Delete(body);
     if (body_str == NULL) {
-        set_err(errbuf, "Out of memory");
+        set_err(errbuf, tr("out_of_memory"));
         return ESP_ERR_NO_MEM;
     }
     esp_err_t err = post_for_product("/api/device/v1/products", body_str, out, errbuf,
-                                     "Create failed");
+                                     tr("create_failed"));
     free(body_str);
     return err;
 }
@@ -377,5 +379,5 @@ esp_err_t api_link_barcode(int product_id, const char *barcode,
     snprintf(path, sizeof(path), "/api/device/v1/products/%d/barcodes", product_id);
     char body[96];
     snprintf(body, sizeof(body), "{\"barcode\":\"%s\"}", barcode);
-    return post_for_product(path, body, out, errbuf, "Link failed");
+    return post_for_product(path, body, out, errbuf, tr("link_failed"));
 }

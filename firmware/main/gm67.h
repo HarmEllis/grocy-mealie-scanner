@@ -30,3 +30,10 @@ esp_err_t gm67_init(gm67_scan_cb_t cb, uint32_t debounce_ms);
  * missed or spurious beep on the next scan). Safe to call from any task; must
  * be called after gm67_init(). */
 esp_err_t gm67_set_beep(bool enabled);
+
+/* Enable or disable the software scanning gate (screen sleep feature).
+ * enabled=true  → submit_code() forwards scans normally.
+ * enabled=false → submit_code() drops all decoded frames immediately.
+ * Pure atomic flag write: no hardware interaction, no command queue.
+ * Safe to call from any task after gm67_init(). */
+esp_err_t gm67_set_scanning(bool enabled);

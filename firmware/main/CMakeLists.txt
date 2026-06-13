@@ -12,6 +12,8 @@ idf_component_register(
         main.c
         display.c
         ui.c
+        ui_fonts.c
+        i18n.c
         gm67.c
         gm67_proto.c
         status_led.c
@@ -33,4 +35,6 @@ idf_component_register(
         lwip
         mbedtls
         nvs_flash
+    EMBED_FILES
+        assets/Montserrat-Medium.ttf
 )

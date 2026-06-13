@@ -3,9 +3,12 @@
  * Deviations are documented in BOARD_NOTES.md ("Design → LVGL notes"). */
 #include "ui.h"
 
+#include "i18n.h"
+#include "ui_fonts.h"
 #include "esp_log.h"
 #include "esp_lvgl_port.h"
 #include "lvgl.h"
+#include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -40,11 +43,22 @@ static char s_last_scan_name[API_NAME_LEN];
 static char s_last_scan_time[8];
 static lv_timer_t *s_clock_timer;
 
+/* Screen sleep state.
+ * s_screen_timeout_ms: written by app task (ui_set_screen_timeout), read by
+ *   LVGL task (idle_tick) — use _Atomic to satisfy the C11 data-race rule.
+ * s_sleep_allowed: written by app task (ui_set_sleep_allowed), read by LVGL
+ *   task (idle_tick) — single-word aligned access, safe on ESP32 Xtensa.
+ * s_asleep, s_sleep_overlay: LVGL task only. */
+static _Atomic uint32_t s_screen_timeout_ms = 0; /* 0 = sleep disabled */
+static _Atomic bool s_sleep_allowed = false;
+static bool s_asleep = false;
+static lv_obj_t *s_sleep_overlay = NULL;
+
 /* Pending-state carried between screens */
 static char s_pending_barcode[API_BARCODE_LEN];
 static lv_obj_t *s_search_results_box;
 
-static void emit(ui_event_type_t type, api_action_t action, int product_id,
+static bool emit(ui_event_type_t type, api_action_t action, int product_id,
                  const char *text)
 {
     ui_event_t evt = {
@@ -55,7 +69,96 @@ static void emit(ui_event_type_t type, api_action_t action, int product_id,
     if (text != NULL) {
         strlcpy(evt.text, text, sizeof(evt.text));
     }
-    s_cb(&evt);
+    return s_cb(&evt);
+}
+
+void ui_set_screen_timeout(uint32_t seconds)
+{
+    atomic_store(&s_screen_timeout_ms, seconds * 1000u);
+}
+
+void ui_set_sleep_allowed(bool allowed)
+{
+    atomic_store(&s_sleep_allowed, allowed);
+}
+
+/* Taps on the sleep overlay wake the display.  The overlay sits on
+ * lv_layer_top() and consumes the touch so nothing underneath fires. */
+static void sleep_overlay_cb(lv_event_t *e)
+{
+    (void)e;
+    if (!s_asleep) {
+        return;
+    }
+    s_asleep = false;
+    lv_display_trigger_activity(NULL);
+    if (!emit(UI_EVT_WAKE, 0, 0, NULL)) {
+        /* Queue full — restore s_asleep so the overlay remains tappable */
+        s_asleep = true;
+        return;
+    }
+    if (s_sleep_overlay != NULL) {
+        /* lv_obj_del_async: defer the free to the next lv_timer_handler so we
+         * don't free the event target while the indev dispatcher still holds a
+         * pointer to it (use-after-free if lv_obj_del were used here). */
+        lv_obj_del_async(s_sleep_overlay);
+        s_sleep_overlay = NULL;
+    }
+}
+
+/* Called from the LVGL task every 1 s (alongside clock_tick).  Checks
+ * LVGL's built-in touch-inactivity counter and triggers sleep when the
+ * configured threshold is exceeded.  Only fires while on the idle screen
+ * (s_sleep_allowed=true) — non-idle screens (product, search, proposal…)
+ * must not sleep because barcode scans don't reset the touch-inactivity
+ * counter, so a freshly-scanned product screen would time out mid-read. */
+static void idle_tick(lv_timer_t *t)
+{
+    (void)t;
+    uint32_t timeout_ms = atomic_load(&s_screen_timeout_ms);
+    if (s_asleep || timeout_ms == 0 || !atomic_load(&s_sleep_allowed)) {
+        return;
+    }
+    if (lv_display_get_inactive_time(NULL) >= timeout_ms) {
+        /* Mark as asleep to prevent re-emit; overlay creation happens in the
+         * app task (ui_show_sleep_visual) after state validation so a scan
+         * arriving just before this event is processed cannot leave an orphan
+         * overlay on a live product screen. */
+        s_asleep = true;
+        if (!emit(UI_EVT_SLEEP, 0, 0, NULL)) {
+            s_asleep = false; /* queue full — allow retry on next tick */
+        }
+    }
+}
+
+/* Create the full-screen sleep overlay and force a synchronous redraw.
+ * Must be called from the app task while holding lvgl_port_lock. */
+void ui_show_sleep_visual(void)
+{
+    lv_obj_t *top = lv_layer_top();
+    s_sleep_overlay = lv_obj_create(top);
+    lv_obj_remove_style_all(s_sleep_overlay);
+    lv_obj_set_size(s_sleep_overlay, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_pos(s_sleep_overlay, 0, 0);
+    lv_obj_set_style_bg_color(s_sleep_overlay, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(s_sleep_overlay, LV_OPA_COVER, 0);
+    lv_obj_add_flag(s_sleep_overlay, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(s_sleep_overlay, LV_OBJ_FLAG_SCROLLABLE);
+    /* LV_EVENT_PRESSED fires on the first touch contact — LV_EVENT_CLICKED
+     * requires a full press+release without movement, which can miss wakes
+     * on a resistive panel or when the user holds the screen on. */
+    lv_obj_add_event_cb(s_sleep_overlay, sleep_overlay_cb, LV_EVENT_PRESSED, NULL);
+    lv_obj_invalidate(lv_screen_active());
+    lv_obj_invalidate(top);
+    lv_refr_now(NULL);
+}
+
+/* Reset the s_asleep flag when the app task rejects a UI_EVT_SLEEP event
+ * (state changed before the event was processed).  Must be called under
+ * lvgl_port_lock so idle_tick cannot race the write. */
+void ui_cancel_sleep(void)
+{
+    s_asleep = false;
 }
 
 /* Defined further down with the other not-found/search callbacks. */
@@ -73,7 +176,7 @@ static lv_obj_t *add_bar_icon(const char *symbol, lv_align_t align, int dx,
 {
     lv_obj_t *icon = lv_label_create(s_status_bar);
     lv_label_set_text(icon, symbol);
-    lv_obj_set_style_text_font(icon, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(icon, &gms_font_12, 0);
     lv_obj_set_style_text_color(icon, COL_DIM, 0);
     lv_obj_align(icon, align, dx, 0);
     lv_obj_add_flag(icon, LV_OBJ_FLAG_CLICKABLE);
@@ -146,13 +249,13 @@ static lv_obj_t *screen_reset(const char *status_text, lv_color_t dot_color,
 
         s_status_label = lv_label_create(bar);
         lv_label_set_text(s_status_label, status_text);
-        lv_obj_set_style_text_font(s_status_label, &lv_font_montserrat_10, 0);
+        lv_obj_set_style_text_font(s_status_label, &gms_font_10, 0);
         lv_obj_set_style_text_color(s_status_label, COL_DIM, 0);
         lv_obj_align(s_status_label, LV_ALIGN_LEFT_MID, 12, 0);
 
         s_status_clock = lv_label_create(bar);
         lv_label_set_text(s_status_clock, "--:--");
-        lv_obj_set_style_text_font(s_status_clock, &lv_font_montserrat_10, 0);
+        lv_obj_set_style_text_font(s_status_clock, &gms_font_10, 0);
         lv_obj_set_style_text_color(s_status_clock, COL_DIM, 0);
         lv_obj_align(s_status_clock, LV_ALIGN_RIGHT_MID, 0, 0);
         clock_tick(NULL);
@@ -178,7 +281,10 @@ static void scanline_anim_cb(void *obj, int32_t v)
 void ui_show_idle(void)
 {
     lvgl_port_lock(0);
-    lv_obj_t *content = screen_reset(s_connected ? "Connected" : "Offline",
+    /* Reset touch-inactivity so the idle screen always gets a full timeout,
+     * not an inherited one from whatever screen the user was on before. */
+    lv_display_trigger_activity(NULL);
+    lv_obj_t *content = screen_reset(s_connected ? tr("connected") : tr("offline"),
                                      s_connected ? COL_GREEN : COL_CORAL, true);
     s_status_shows_conn = true; /* this status bar tracks live connection state */
 
@@ -251,14 +357,14 @@ void ui_show_idle(void)
     lv_anim_start(&a);
 
     lv_obj_t *title = lv_label_create(content);
-    lv_label_set_text(title, "Ready to scan");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+    lv_label_set_text(title, tr("ready_to_scan"));
+    lv_obj_set_style_text_font(title, &gms_font_20, 0);
     lv_obj_set_style_text_color(title, COL_TEXT, 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 172);
 
     lv_obj_t *hint = lv_label_create(content);
-    lv_label_set_text(hint, "Point the scanner\nat a barcode");
-    lv_obj_set_style_text_font(hint, &lv_font_montserrat_12, 0);
+    lv_label_set_text(hint, tr("point_scanner"));
+    lv_obj_set_style_text_font(hint, &gms_font_12, 0);
     lv_obj_set_style_text_color(hint, COL_DIM, 0);
     lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(hint, LV_ALIGN_TOP_MID, 0, 200);
@@ -275,14 +381,14 @@ void ui_show_idle(void)
         lv_obj_set_style_pad_hor(footer, 12, 0);
 
         lv_obj_t *tag = lv_label_create(footer);
-        lv_label_set_text(tag, "LAST");
-        lv_obj_set_style_text_font(tag, &lv_font_montserrat_10, 0);
+        lv_label_set_text(tag, tr("last"));
+        lv_obj_set_style_text_font(tag, &gms_font_10, 0);
         lv_obj_set_style_text_color(tag, COL_DIM2, 0);
         lv_obj_align(tag, LV_ALIGN_LEFT_MID, 0, 0);
 
         lv_obj_t *name = lv_label_create(footer);
         lv_label_set_text(name, s_last_scan_name);
-        lv_obj_set_style_text_font(name, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_font(name, &gms_font_12, 0);
         lv_obj_set_style_text_color(name, COL_DIM, 0);
         lv_obj_set_width(name, 150);
         lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
@@ -290,7 +396,7 @@ void ui_show_idle(void)
 
         lv_obj_t *when = lv_label_create(footer);
         lv_label_set_text(when, s_last_scan_time);
-        lv_obj_set_style_text_font(when, &lv_font_montserrat_10, 0);
+        lv_obj_set_style_text_font(when, &gms_font_10, 0);
         lv_obj_set_style_text_color(when, COL_DIM2, 0);
         lv_obj_align(when, LV_ALIGN_RIGHT_MID, 0, 0);
     }
@@ -323,7 +429,7 @@ void ui_set_connected(bool connected)
             lv_obj_set_style_bg_color(s_status_dot, connected ? COL_GREEN : COL_CORAL, 0);
         }
         if (s_status_label != NULL) {
-            lv_label_set_text(s_status_label, connected ? "Connected" : "Offline");
+            lv_label_set_text(s_status_label, connected ? tr("connected") : tr("offline"));
         }
     }
     lvgl_port_unlock();
@@ -355,7 +461,7 @@ static lv_obj_t *make_stat_card(lv_obj_t *parent, int x, const char *label,
 
     lv_obj_t *l = lv_label_create(card);
     lv_label_set_text(l, label);
-    lv_obj_set_style_text_font(l, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_font(l, &gms_font_10, 0);
     lv_obj_set_style_text_color(l, COL_DIM2, 0);
     lv_obj_align(l, LV_ALIGN_TOP_LEFT, 0, 0);
 
@@ -363,7 +469,7 @@ static lv_obj_t *make_stat_card(lv_obj_t *parent, int x, const char *label,
     fmt_amount(buf, sizeof(buf), value);
     lv_obj_t *v = lv_label_create(card);
     lv_label_set_text(v, buf);
-    lv_obj_set_style_text_font(v, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(v, &gms_font_20, 0);
     lv_obj_set_style_text_color(v, value_color, 0);
     lv_obj_align(v, LV_ALIGN_BOTTOM_LEFT, 0, 2);
     return card;
@@ -379,7 +485,7 @@ typedef struct {
 void ui_show_product(const api_product_t *product)
 {
     lvgl_port_lock(0);
-    lv_obj_t *content = screen_reset("Scanned", COL_GREEN, true);
+    lv_obj_t *content = screen_reset(tr("scanned"), COL_GREEN, true);
     lv_obj_set_style_pad_all(content, 12, 0);
 
     /* Back chevron → idle; shift the dot + label right to make room. */
@@ -389,7 +495,7 @@ void ui_show_product(const api_product_t *product)
 
     lv_obj_t *name = lv_label_create(content);
     lv_label_set_text(name, product->name);
-    lv_obj_set_style_text_font(name, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(name, &gms_font_18, 0);
     lv_obj_set_style_text_color(name, COL_TEXT, 0);
     lv_obj_set_width(name, 216);
     lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
@@ -401,7 +507,7 @@ void ui_show_product(const api_product_t *product)
     } else {
         lv_label_set_text(sub, "");
     }
-    lv_obj_set_style_text_font(sub, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(sub, &gms_font_12, 0);
     lv_obj_set_style_text_color(sub, COL_DIM, 0);
     lv_obj_set_pos(sub, 0, 26);
 
@@ -413,16 +519,16 @@ void ui_show_product(const api_product_t *product)
     lv_color_t stock_color = product->stock_amount <= product->min_stock_amount
                                  ? COL_CORAL
                                  : COL_AMBER;
-    make_stat_card(cards, 0, "IN STOCK", product->stock_amount, stock_color);
-    make_stat_card(cards, 73, "MIN", product->min_stock_amount, COL_DIM);
-    make_stat_card(cards, 146, "OPENED", product->opened_amount, COL_GREEN);
+    make_stat_card(cards, 0, tr("in_stock"), product->stock_amount, stock_color);
+    make_stat_card(cards, 73, tr("minimum"), product->min_stock_amount, COL_DIM);
+    make_stat_card(cards, 146, tr("opened_stat"), product->opened_amount, COL_GREEN);
 
     /* 2x2 action grid (tiles 104x82, 8px gap) */
     static const tile_def_t tiles[] = {
-        { "Bought", LV_SYMBOL_PLUS, { 0 }, API_ACTION_PURCHASE },
-        { "Opened", LV_SYMBOL_EJECT, { 0 }, API_ACTION_OPEN },
-        { "Consumed", LV_SYMBOL_OK, { 0 }, API_ACTION_CONSUME },
-        { "Shopping", LV_SYMBOL_LIST, { 0 }, API_ACTION_SHOPPING_LIST },
+        { "action_bought", LV_SYMBOL_PLUS, { 0 }, API_ACTION_PURCHASE },
+        { "action_opened", LV_SYMBOL_EJECT, { 0 }, API_ACTION_OPEN },
+        { "action_consumed", LV_SYMBOL_OK, { 0 }, API_ACTION_CONSUME },
+        { "action_shopping", LV_SYMBOL_LIST, { 0 }, API_ACTION_SHOPPING_LIST },
     };
     const lv_color_t tile_colors[] = { COL_GREEN, COL_GOLD, COL_CORAL, COL_BLUE };
 
@@ -445,13 +551,13 @@ void ui_show_product(const api_product_t *product)
 
         lv_obj_t *icon = lv_label_create(tile);
         lv_label_set_text(icon, tiles[i].symbol);
-        lv_obj_set_style_text_font(icon, &lv_font_montserrat_20, 0);
+        lv_obj_set_style_text_font(icon, &gms_font_20, 0);
         lv_obj_set_style_text_color(icon, tile_colors[i], 0);
         lv_obj_align(icon, LV_ALIGN_TOP_LEFT, 0, 0);
 
         lv_obj_t *label = lv_label_create(tile);
-        lv_label_set_text(label, tiles[i].label);
-        lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
+        lv_label_set_text(label, tr(tiles[i].label));
+        lv_obj_set_style_text_font(label, &gms_font_14, 0);
         lv_obj_set_style_text_color(label, COL_TEXT, 0);
         lv_obj_align(label, LV_ALIGN_BOTTOM_LEFT, 0, 0);
     }
@@ -465,7 +571,7 @@ void ui_show_product(const api_product_t *product)
 void ui_show_saving(void)
 {
     lvgl_port_lock(0);
-    lv_obj_t *content = screen_reset("Saving", COL_AMBER, true);
+    lv_obj_t *content = screen_reset(tr("saving_status"), COL_AMBER, true);
 
     lv_obj_t *spinner = lv_spinner_create(content);
     lv_obj_set_size(spinner, 56, 56);
@@ -476,8 +582,8 @@ void ui_show_saving(void)
     lv_obj_set_style_arc_width(spinner, 5, LV_PART_INDICATOR);
 
     lv_obj_t *label = lv_label_create(content);
-    lv_label_set_text(label, "Saving...");
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
+    lv_label_set_text(label, tr("saving"));
+    lv_obj_set_style_text_font(label, &gms_font_14, 0);
     lv_obj_set_style_text_color(label, COL_DIM, 0);
     lv_obj_align(label, LV_ALIGN_CENTER, 0, 28);
     lvgl_port_unlock();
@@ -492,10 +598,10 @@ static void flash_dismiss_cb(lv_event_t *e)
 void ui_show_flash(const api_action_result_t *result)
 {
     static const char *labels[] = {
-        [API_ACTION_PURCHASE] = "Bought",
-        [API_ACTION_OPEN] = "Opened",
-        [API_ACTION_CONSUME] = "Consumed",
-        [API_ACTION_SHOPPING_LIST] = "Added to list",
+        [API_ACTION_PURCHASE] = "action_bought",
+        [API_ACTION_OPEN] = "action_opened",
+        [API_ACTION_CONSUME] = "action_consumed",
+        [API_ACTION_SHOPPING_LIST] = "added_to_list",
     };
     const lv_color_t colors[] = { COL_GREEN, COL_GOLD, COL_CORAL, COL_BLUE };
     lv_color_t color = colors[result->action];
@@ -507,16 +613,16 @@ void ui_show_flash(const api_action_result_t *result)
     case API_ACTION_CONSUME:
         fmt_amount(b, sizeof(b), result->stock_before);
         fmt_amount(a, sizeof(a), result->stock_after);
-        snprintf(sub, sizeof(sub), "Stock  %s -> %s", b, a);
+        snprintf(sub, sizeof(sub), tr("stock_change_fmt"), b, a);
         break;
     case API_ACTION_OPEN:
         fmt_amount(b, sizeof(b), result->opened_before);
         fmt_amount(a, sizeof(a), result->opened_after);
-        snprintf(sub, sizeof(sub), "Open  %s -> %s", b, a);
+        snprintf(sub, sizeof(sub), tr("open_change_fmt"), b, a);
         break;
     case API_ACTION_SHOPPING_LIST:
     default:
-        strlcpy(sub, "On shopping list", sizeof(sub));
+        strlcpy(sub, tr("on_shopping_list"), sizeof(sub));
         break;
     }
 
@@ -535,19 +641,19 @@ void ui_show_flash(const api_action_result_t *result)
 
     lv_obj_t *check = lv_label_create(badge);
     lv_label_set_text(check, LV_SYMBOL_OK);
-    lv_obj_set_style_text_font(check, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(check, &gms_font_24, 0);
     lv_obj_set_style_text_color(check, COL_DEVICE, 0);
     lv_obj_center(check);
 
     lv_obj_t *label = lv_label_create(content);
-    lv_label_set_text(label, labels[result->action]);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
+    lv_label_set_text(label, tr(labels[result->action]));
+    lv_obj_set_style_text_font(label, &gms_font_24, 0);
     lv_obj_set_style_text_color(label, lv_color_white(), 0);
     lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 212);
 
     lv_obj_t *name = lv_label_create(content);
     lv_label_set_text(name, result->product_name);
-    lv_obj_set_style_text_font(name, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(name, &gms_font_14, 0);
     lv_obj_set_style_text_color(name, lv_color_hex(0xd2d2d6), 0);
     lv_obj_set_width(name, 216);
     lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
@@ -566,7 +672,7 @@ void ui_show_flash(const api_action_result_t *result)
 
     lv_obj_t *subl = lv_label_create(pill);
     lv_label_set_text(subl, sub);
-    lv_obj_set_style_text_font(subl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(subl, &gms_font_12, 0);
     lv_obj_set_style_text_color(subl, lv_color_white(), 0);
     lv_obj_center(subl);
     lvgl_port_unlock();
@@ -581,7 +687,7 @@ static void error_dismiss_cb(lv_event_t *e)
 void ui_show_error(const char *message)
 {
     lvgl_port_lock(0);
-    lv_obj_t *content = screen_reset("Error", COL_CORAL, true);
+    lv_obj_t *content = screen_reset(tr("error"), COL_CORAL, true);
     lv_obj_add_flag(content, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(content, error_dismiss_cb, LV_EVENT_CLICKED, NULL);
 
@@ -598,13 +704,13 @@ void ui_show_error(const char *message)
 
     lv_obj_t *icon = lv_label_create(circle);
     lv_label_set_text(icon, LV_SYMBOL_WARNING);
-    lv_obj_set_style_text_font(icon, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(icon, &gms_font_22, 0);
     lv_obj_set_style_text_color(icon, COL_CORAL, 0);
     lv_obj_center(icon);
 
     lv_obj_t *label = lv_label_create(content);
     lv_label_set_text(label, message);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(label, &gms_font_14, 0);
     lv_obj_set_style_text_color(label, COL_TEXT, 0);
     lv_obj_set_width(label, 200);
     lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
@@ -612,8 +718,8 @@ void ui_show_error(const char *message)
     lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 122);
 
     lv_obj_t *hint = lv_label_create(content);
-    lv_label_set_text(hint, "Tap to dismiss");
-    lv_obj_set_style_text_font(hint, &lv_font_montserrat_12, 0);
+    lv_label_set_text(hint, tr("tap_to_dismiss"));
+    lv_obj_set_style_text_font(hint, &gms_font_12, 0);
     lv_obj_set_style_text_color(hint, COL_DIM, 0);
     lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -18);
     lvgl_port_unlock();
@@ -645,7 +751,7 @@ static lv_obj_t *make_button(lv_obj_t *parent, const char *text, bool primary,
 
     lv_obj_t *label = lv_label_create(btn);
     lv_label_set_text(label, text);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(label, &gms_font_14, 0);
     lv_obj_set_style_text_color(label, primary ? COL_DEVICE : COL_TEXT, 0);
     lv_obj_set_width(label, 196);
     lv_label_set_long_mode(label, LV_LABEL_LONG_DOT);
@@ -685,7 +791,7 @@ void ui_show_not_found(const api_scan_result_t *scan)
     strlcpy(s_pending_barcode, scan->barcode, sizeof(s_pending_barcode));
 
     lvgl_port_lock(0);
-    lv_obj_t *content = screen_reset("Unknown", COL_AMBER, true);
+    lv_obj_t *content = screen_reset(tr("unknown"), COL_AMBER, true);
     lv_obj_set_style_pad_hor(content, 14, 0);
 
     lv_obj_t *circle = lv_obj_create(content);
@@ -701,13 +807,13 @@ void ui_show_not_found(const api_scan_result_t *scan)
 
     lv_obj_t *icon = lv_label_create(circle);
     lv_label_set_text(icon, LV_SYMBOL_WARNING);
-    lv_obj_set_style_text_font(icon, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(icon, &gms_font_18, 0);
     lv_obj_set_style_text_color(icon, COL_AMBER, 0);
     lv_obj_center(icon);
 
     lv_obj_t *title = lv_label_create(content);
-    lv_label_set_text(title, "Product not found");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_18, 0);
+    lv_label_set_text(title, tr("product_not_found"));
+    lv_obj_set_style_text_font(title, &gms_font_18, 0);
     lv_obj_set_style_text_color(title, COL_TEXT, 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 60);
 
@@ -726,7 +832,7 @@ void ui_show_not_found(const api_scan_result_t *scan)
 
     lv_obj_t *code = lv_label_create(chip);
     lv_label_set_text(code, scan->barcode);
-    lv_obj_set_style_text_font(code, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(code, &gms_font_12, 0);
     lv_obj_set_style_text_color(code, COL_TEXT, 0);
     lv_obj_center(code);
 
@@ -735,26 +841,26 @@ void ui_show_not_found(const api_scan_result_t *scan)
     if (scan->suggestion_count > 0) {
         s_suggestion_id = scan->suggestions[0].id;
         char text[96];
-        snprintf(text, sizeof(text), "Link to %s", scan->suggestions[0].name);
+        snprintf(text, sizeof(text), tr("link_to_fmt"), scan->suggestions[0].name);
         lv_obj_t *btn = make_button(content, text, true, link_suggestion_cb, NULL);
         lv_obj_align(btn, LV_ALIGN_TOP_MID, 0, y);
         y += 49;
     }
     if (scan->has_external_name) {
         char text[96];
-        snprintf(text, sizeof(text), "Create \"%s\"", scan->external_name);
+        snprintf(text, sizeof(text), tr("create_quoted_fmt"), scan->external_name);
         lv_obj_t *btn = make_button(content, text, scan->suggestion_count == 0,
                                     open_proposal_cb, NULL);
         lv_obj_align(btn, LV_ALIGN_TOP_MID, 0, y);
         y += scan->suggestion_count == 0 ? 49 : 47;
     }
-    lv_obj_t *search_btn = make_button(content, "Search products", false,
+    lv_obj_t *search_btn = make_button(content, tr("search_products"), false,
                                        open_search_cb, NULL);
     lv_obj_align(search_btn, LV_ALIGN_TOP_MID, 0, y);
 
     lv_obj_t *again = lv_label_create(content);
-    lv_label_set_text(again, "Scan again");
-    lv_obj_set_style_text_font(again, &lv_font_montserrat_12, 0);
+    lv_label_set_text(again, tr("scan_again"));
+    lv_obj_set_style_text_font(again, &gms_font_12, 0);
     lv_obj_set_style_text_color(again, COL_DIM, 0);
     lv_obj_align(again, LV_ALIGN_BOTTOM_MID, 0, -8);
     lv_obj_add_flag(again, LV_OBJ_FLAG_CLICKABLE);
@@ -778,12 +884,12 @@ static void proposal_confirm_cb(lv_event_t *e)
 void ui_show_proposal(const char *initial_name)
 {
     lvgl_port_lock(0);
-    lv_obj_t *content = screen_reset("New product", COL_AMBER, true);
+    lv_obj_t *content = screen_reset(tr("new_product"), COL_AMBER, true);
     lv_obj_set_style_pad_hor(content, 14, 0);
 
     lv_obj_t *label = lv_label_create(content);
-    lv_label_set_text(label, "Create in Grocy as");
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_12, 0);
+    lv_label_set_text(label, tr("create_in_grocy_as"));
+    lv_obj_set_style_text_font(label, &gms_font_12, 0);
     lv_obj_set_style_text_color(label, COL_DIM, 0);
     lv_obj_set_pos(label, 0, 6);
 
@@ -796,9 +902,9 @@ void ui_show_proposal(const char *initial_name)
     lv_obj_set_style_bg_color(s_proposal_ta, COL_CARD, 0);
     lv_obj_set_style_text_color(s_proposal_ta, COL_TEXT, 0);
     lv_obj_set_style_border_color(s_proposal_ta, COL_BORDER2, 0);
-    lv_obj_set_style_text_font(s_proposal_ta, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(s_proposal_ta, &gms_font_14, 0);
 
-    lv_obj_t *btn = make_button(content, "Create product", true, proposal_confirm_cb, NULL);
+    lv_obj_t *btn = make_button(content, tr("create_product"), true, proposal_confirm_cb, NULL);
     lv_obj_set_pos(btn, 0, 76);
 
     /* On-screen keyboard opens with the name field focused (user request) */
@@ -831,19 +937,19 @@ static void search_pick_cb(lv_event_t *e)
 void ui_show_search(void)
 {
     lvgl_port_lock(0);
-    lv_obj_t *content = screen_reset("Search", COL_BLUE, true);
+    lv_obj_t *content = screen_reset(tr("search"), COL_BLUE, true);
     lv_obj_set_style_pad_hor(content, 14, 0);
 
     s_search_ta = lv_textarea_create(content);
     lv_textarea_set_one_line(s_search_ta, true);
-    lv_textarea_set_placeholder_text(s_search_ta, "Product name...");
+    lv_textarea_set_placeholder_text(s_search_ta, tr("product_name_placeholder"));
     lv_textarea_set_max_length(s_search_ta, API_NAME_LEN - 1);
     lv_obj_set_size(s_search_ta, 212, 40);
     lv_obj_set_pos(s_search_ta, 0, 8);
     lv_obj_set_style_bg_color(s_search_ta, COL_CARD, 0);
     lv_obj_set_style_text_color(s_search_ta, COL_TEXT, 0);
     lv_obj_set_style_border_color(s_search_ta, COL_BORDER2, 0);
-    lv_obj_set_style_text_font(s_search_ta, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(s_search_ta, &gms_font_14, 0);
 
     s_search_results_box = lv_obj_create(content);
     lv_obj_remove_style_all(s_search_results_box);
@@ -871,8 +977,8 @@ void ui_show_search_results(const api_search_result_t *results)
     lv_obj_clean(s_search_results_box);
     if (results->count == 0) {
         lv_obj_t *none = lv_label_create(s_search_results_box);
-        lv_label_set_text(none, "No matches");
-        lv_obj_set_style_text_font(none, &lv_font_montserrat_12, 0);
+        lv_label_set_text(none, tr("no_matches"));
+        lv_obj_set_style_text_font(none, &gms_font_12, 0);
         lv_obj_set_style_text_color(none, COL_DIM, 0);
     }
     for (int i = 0; i < results->count; i++) {
@@ -893,7 +999,7 @@ void ui_show_search_results(const api_search_result_t *results)
 
         lv_obj_t *name = lv_label_create(row);
         lv_label_set_text(name, ref->name);
-        lv_obj_set_style_text_font(name, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_font(name, &gms_font_12, 0);
         lv_obj_set_style_text_color(name, COL_TEXT, 0);
         lv_obj_set_width(name, 150);
         lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
@@ -902,10 +1008,10 @@ void ui_show_search_results(const api_search_result_t *results)
         char stock[28];
         char amount[12];
         fmt_amount(amount, sizeof(amount), ref->stock_amount);
-        snprintf(stock, sizeof(stock), "%s in stock", amount);
+        snprintf(stock, sizeof(stock), tr("in_stock_fmt"), amount);
         lv_obj_t *st = lv_label_create(row);
         lv_label_set_text(st, stock);
-        lv_obj_set_style_text_font(st, &lv_font_montserrat_10, 0);
+        lv_obj_set_style_text_font(st, &gms_font_10, 0);
         lv_obj_set_style_text_color(st, COL_DIM2, 0);
         lv_obj_align(st, LV_ALIGN_RIGHT_MID, 0, 0);
     }
@@ -926,6 +1032,18 @@ static void toggle_light_cb(lv_event_t *e)
 {
     (void)e;
     emit(UI_EVT_TOGGLE_LIGHT, 0, 0, NULL);
+}
+
+static void toggle_language_cb(lv_event_t *e)
+{
+    (void)e;
+    emit(UI_EVT_TOGGLE_LANGUAGE, 0, 0, NULL);
+}
+
+static void cycle_timeout_cb(lv_event_t *e)
+{
+    (void)e;
+    emit(UI_EVT_CYCLE_TIMEOUT, 0, 0, NULL);
 }
 
 /* One toggle card: title + subtitle + a state-only switch (the whole row is the
@@ -949,13 +1067,13 @@ static void make_settings_row(lv_obj_t *parent, int y, const char *title,
 
     lv_obj_t *t = lv_label_create(row);
     lv_label_set_text(t, title);
-    lv_obj_set_style_text_font(t, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(t, &gms_font_14, 0);
     lv_obj_set_style_text_color(t, COL_TEXT, 0);
     lv_obj_align(t, LV_ALIGN_LEFT_MID, 0, -9);
 
     lv_obj_t *s = lv_label_create(row);
     lv_label_set_text(s, subtitle);
-    lv_obj_set_style_text_font(s, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_font(s, &gms_font_10, 0);
     lv_obj_set_style_text_color(s, COL_DIM, 0);
     lv_obj_align(s, LV_ALIGN_LEFT_MID, 0, 9);
 
@@ -970,7 +1088,72 @@ static void make_settings_row(lv_obj_t *parent, int y, const char *title,
     }
 }
 
-void ui_show_settings(bool beep, bool light)
+static void make_language_row(lv_obj_t *parent, int y, const char *language)
+{
+    lv_obj_t *row = lv_obj_create(parent);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_size(row, 212, 48);
+    lv_obj_set_pos(row, 0, y);
+    lv_obj_set_style_radius(row, 11, 0);
+    lv_obj_set_style_bg_color(row, COL_CARD, 0);
+    lv_obj_set_style_bg_opa(row, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(row, COL_BORDER, 0);
+    lv_obj_set_style_border_width(row, 1, 0);
+    lv_obj_set_style_pad_hor(row, 12, 0);
+    lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_bg_color(row, lv_color_hex(0x26262b), LV_STATE_PRESSED);
+    lv_obj_add_event_cb(row, toggle_language_cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *title = lv_label_create(row);
+    lv_label_set_text(title, tr("language"));
+    lv_obj_set_style_text_font(title, &gms_font_14, 0);
+    lv_obj_set_style_text_color(title, COL_TEXT, 0);
+    lv_obj_align(title, LV_ALIGN_LEFT_MID, 0, 0);
+
+    lv_obj_t *value = lv_label_create(row);
+    lv_label_set_text(value, tr(strcmp(language, "nl") == 0 ? "dutch" : "english"));
+    lv_obj_set_style_text_font(value, &gms_font_12, 0);
+    lv_obj_set_style_text_color(value, COL_BLUE, 0);
+    lv_obj_align(value, LV_ALIGN_RIGHT_MID, 0, 0);
+}
+
+static void make_timeout_row(lv_obj_t *parent, int y, uint32_t timeout_seconds)
+{
+    lv_obj_t *row = lv_obj_create(parent);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_size(row, 212, 48);
+    lv_obj_set_pos(row, 0, y);
+    lv_obj_set_style_radius(row, 11, 0);
+    lv_obj_set_style_bg_color(row, COL_CARD, 0);
+    lv_obj_set_style_bg_opa(row, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(row, COL_BORDER, 0);
+    lv_obj_set_style_border_width(row, 1, 0);
+    lv_obj_set_style_pad_hor(row, 12, 0);
+    lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_bg_color(row, lv_color_hex(0x26262b), LV_STATE_PRESSED);
+    lv_obj_add_event_cb(row, cycle_timeout_cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *title = lv_label_create(row);
+    lv_label_set_text(title, tr("screen_timeout"));
+    lv_obj_set_style_text_font(title, &gms_font_14, 0);
+    lv_obj_set_style_text_color(title, COL_TEXT, 0);
+    lv_obj_align(title, LV_ALIGN_LEFT_MID, 0, 0);
+
+    lv_obj_t *value = lv_label_create(row);
+    if (timeout_seconds == 0) {
+        lv_label_set_text(value, tr("screen_timeout_never"));
+    } else {
+        char buf[16];
+        snprintf(buf, sizeof(buf), tr("seconds_fmt"), (int)timeout_seconds);
+        lv_label_set_text(value, buf);
+    }
+    lv_obj_set_style_text_font(value, &gms_font_12, 0);
+    lv_obj_set_style_text_color(value, COL_BLUE, 0);
+    lv_obj_align(value, LV_ALIGN_RIGHT_MID, 0, 0);
+}
+
+void ui_show_settings(bool beep, bool light, const char *language,
+                      uint32_t timeout_seconds)
 {
     lvgl_port_lock(0);
     lv_obj_t *content = screen_reset(NULL, COL_TEXT, false);
@@ -987,8 +1170,10 @@ void ui_show_settings(bool beep, bool light)
     lv_obj_set_style_pad_hor(bar, 12, 0);
 
     lv_obj_t *back = lv_label_create(bar);
-    lv_label_set_text(back, LV_SYMBOL_LEFT " Back");
-    lv_obj_set_style_text_font(back, &lv_font_montserrat_10, 0);
+    char back_text[32];
+    snprintf(back_text, sizeof(back_text), LV_SYMBOL_LEFT " %s", tr("back"));
+    lv_label_set_text(back, back_text);
+    lv_obj_set_style_text_font(back, &gms_font_10, 0);
     lv_obj_set_style_text_color(back, COL_DIM, 0);
     lv_obj_align(back, LV_ALIGN_LEFT_MID, 0, 0);
     lv_obj_add_flag(back, LV_OBJ_FLAG_CLICKABLE);
@@ -996,8 +1181,8 @@ void ui_show_settings(bool beep, bool light)
     lv_obj_add_event_cb(back, dismiss_cb, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *title = lv_label_create(bar);
-    lv_label_set_text(title, "Settings");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_12, 0);
+    lv_label_set_text(title, tr("settings"));
+    lv_obj_set_style_text_font(title, &gms_font_12, 0);
     lv_obj_set_style_text_color(title, COL_TEXT, 0);
     lv_obj_center(title);
 
@@ -1006,23 +1191,32 @@ void ui_show_settings(bool beep, bool light)
     lv_obj_set_size(body, 240, 320 - STATUS_BAR_H);
     lv_obj_set_pos(body, 0, STATUS_BAR_H);
     lv_obj_set_style_pad_hor(body, 14, 0);
+    /* Allow silent scrolling in case the content is taller than the viewport
+     * (e.g. with a long translated note at the bottom). */
+    lv_obj_set_scrollbar_mode(body, LV_SCROLLBAR_MODE_OFF);
 
     lv_obj_t *section = lv_label_create(body);
-    lv_label_set_text(section, "SCAN FEEDBACK");
-    lv_obj_set_style_text_font(section, &lv_font_montserrat_10, 0);
+    lv_label_set_text(section, tr("scan_feedback"));
+    lv_obj_set_style_text_font(section, &gms_font_10, 0);
     lv_obj_set_style_text_color(section, COL_DIM2, 0);
     lv_obj_set_pos(section, 2, 14);
 
-    make_settings_row(body, 34, "Scanner beep", "GM67 decode tone", beep, toggle_beep_cb);
-    make_settings_row(body, 98, "Status light", "WS2812 result flash", light, toggle_light_cb);
+    make_settings_row(body, 34, tr("scanner_beep"), tr("decode_tone"),
+                      beep, toggle_beep_cb);
+    make_settings_row(body, 98, tr("status_light"), tr("result_flash"),
+                      light, toggle_light_cb);
+    make_language_row(body, 162, language);
+    make_timeout_row(body, 218, timeout_seconds);
 
+    /* Note placed after the last row with a fixed offset so it doesn't
+     * collide with the new timeout row (which would happen with BOTTOM_MID). */
     lv_obj_t *note = lv_label_create(body);
-    lv_label_set_text(note, "Changes apply on the next scan.");
-    lv_obj_set_style_text_font(note, &lv_font_montserrat_10, 0);
+    lv_label_set_text(note, tr("changes_next_scan"));
+    lv_obj_set_style_text_font(note, &gms_font_10, 0);
     lv_obj_set_style_text_color(note, COL_DIM2, 0);
     lv_obj_set_width(note, 212);
     lv_obj_set_style_text_align(note, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(note, LV_ALIGN_BOTTOM_MID, 0, -16);
+    lv_obj_set_pos(note, 0, 272);
     lvgl_port_unlock();
 }
 
@@ -1039,8 +1233,8 @@ void ui_show_provisioning(const char *ap_ssid, const char *ap_pass)
     lv_obj_t *content = screen_reset(NULL, COL_AMBER, false);
 
     lv_obj_t *title = lv_label_create(content);
-    lv_label_set_text(title, "Setup");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+    lv_label_set_text(title, tr("setup"));
+    lv_obj_set_style_text_font(title, &gms_font_20, 0);
     lv_obj_set_style_text_color(title, COL_TEXT, 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 16);
 
@@ -1054,10 +1248,8 @@ void ui_show_provisioning(const char *ap_ssid, const char *ap_pass)
     lv_obj_set_style_border_width(qr, 8, 0);
 
     lv_obj_t *info = lv_label_create(content);
-    lv_label_set_text_fmt(info,
-                          "Scan to join  %s\npassword  %s\nthen open  http://192.168.4.1",
-                          ap_ssid, ap_pass);
-    lv_obj_set_style_text_font(info, &lv_font_montserrat_12, 0);
+    lv_label_set_text_fmt(info, tr("setup_info_fmt"), ap_ssid, ap_pass);
+    lv_obj_set_style_text_font(info, &gms_font_12, 0);
     lv_obj_set_style_text_color(info, COL_DIM, 0);
     lv_obj_set_style_text_align(info, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(info, LV_ALIGN_TOP_MID, 0, 216);
@@ -1079,7 +1271,7 @@ void ui_show_connecting(const char *message)
 
     lv_obj_t *label = lv_label_create(content);
     lv_label_set_text(label, message);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(label, &gms_font_14, 0);
     lv_obj_set_style_text_color(label, COL_DIM, 0);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(label, 200);
@@ -1099,6 +1291,7 @@ esp_err_t ui_init(ui_event_cb_t cb)
     lv_obj_set_style_bg_opa(s_screen, LV_OPA_COVER, 0);
     lv_obj_remove_flag(s_screen, LV_OBJ_FLAG_SCROLLABLE);
     s_clock_timer = lv_timer_create(clock_tick, 1000, NULL);
+    lv_timer_create(idle_tick, 1000, NULL); /* screen-sleep inactivity check */
     lvgl_port_unlock();
     ESP_LOGI(TAG, "ui ready");
     return ESP_OK;

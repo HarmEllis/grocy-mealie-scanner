@@ -7,13 +7,16 @@
 #include "board.h"
 #include "display.h"
 #include "gm67.h"
+#include "i18n.h"
 #include "status_led.h"
 #include "storage.h"
 #include "ui.h"
+#include "ui_fonts.h"
 #include "wifi_conn.h"
 
 #include "driver/gpio.h"
 #include "esp_log.h"
+#include "esp_lvgl_port.h"
 #include "esp_netif_sntp.h"
 #include "esp_ota_ops.h"
 #include "esp_system.h"
@@ -22,6 +25,7 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "nvs_flash.h"
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -58,7 +62,8 @@ typedef enum {
     APP_PROPOSAL,   /* create-product proposal, s_scan valid */
     APP_SEARCH,     /* product search, s_scan valid */
     APP_ERROR,      /* error screen, tap dismisses */
-    APP_SETTINGS,   /* on-device settings (beep/light toggles) */
+    APP_SETTINGS,   /* on-device settings (feedback and language) */
+    APP_SLEEP,      /* display sleeping; only UI_EVT_WAKE transitions out */
 } app_state_t;
 
 static QueueHandle_t s_queue;
@@ -72,9 +77,12 @@ static uint64_t s_timeout_deadline = UINT64_MAX;
 static app_state_t s_state = APP_IDLE;
 static api_product_t s_product;
 static api_scan_result_t s_scan;
-/* Loaded once at boot; the settings screen mutates the two feedback flags and
+/* Loaded once at boot; the settings screen mutates feedback and language and
  * persists them, so it lives at file scope rather than on app_main's stack. */
 static app_config_t s_cfg;
+/* Set true while the display is sleeping; on_scan checks this to drop codes
+ * while the screen is off.  Written by the app task, read by the GM67 task. */
+static _Atomic bool s_display_asleep = false;
 
 /* ------------------------------------------------------------------ */
 /* Producers (other tasks)                                             */
@@ -82,15 +90,20 @@ static app_config_t s_cfg;
 
 static void on_scan(const char *code)
 {
+    /* Drop scans while the display is sleeping.  gm67_set_scanning() gates at
+     * submit_code(); this is a second guard in the app task for defence in depth. */
+    if (atomic_load(&s_display_asleep)) {
+        return;
+    }
     app_event_t evt = { .kind = APP_EVT_SCAN };
     strlcpy(evt.barcode, code, sizeof(evt.barcode));
     xQueueSend(s_queue, &evt, 0);
 }
 
-static void on_ui_event(const ui_event_t *ui_evt)
+static bool on_ui_event(const ui_event_t *ui_evt)
 {
     app_event_t evt = { .kind = APP_EVT_UI, .ui = *ui_evt };
-    xQueueSend(s_queue, &evt, 0);
+    return xQueueSend(s_queue, &evt, 0) == pdTRUE;
 }
 
 static void on_timeout(void *arg)
@@ -109,6 +122,9 @@ static void on_timeout(void *arg)
 static void enter_state(app_state_t state, uint32_t timeout_ms)
 {
     s_state = state;
+    /* Allow display sleep only while idle; every other screen blocks sleep
+     * because scans arrive via UART and do not reset LVGL touch-inactivity. */
+    ui_set_sleep_allowed(state == APP_IDLE);
     esp_timer_stop(s_timeout_timer);
     if (timeout_ms > 0) {
         s_timeout_deadline = esp_timer_get_time() + (uint64_t)timeout_ms * 1000;
@@ -153,7 +169,7 @@ static void handle_scan(const char *barcode)
     }
 
     ESP_LOGI(TAG, "scan: %s", barcode);
-    ui_show_connecting("Looking up...");
+    ui_show_connecting(tr("looking_up"));
 
     char err[API_ERR_LEN];
     esp_err_t ret = api_scan(barcode, &s_scan, err);
@@ -259,22 +275,79 @@ static void handle_ui(const ui_event_t *evt)
         handle_link(evt->product_id);
         break;
     case UI_EVT_OPEN_SETTINGS:
-        ui_show_settings(s_cfg.beep_enabled, s_cfg.light_enabled);
+        ui_show_settings(s_cfg.beep_enabled, s_cfg.light_enabled, s_cfg.language,
+                         s_cfg.screen_timeout_seconds);
         enter_state(APP_SETTINGS, SCREEN_TIMEOUT_MS);
         break;
     case UI_EVT_TOGGLE_BEEP:
         s_cfg.beep_enabled = !s_cfg.beep_enabled;
         storage_save_settings(&s_cfg);
         gm67_set_beep(s_cfg.beep_enabled); /* best-effort runtime PARAM_SEND */
-        ui_show_settings(s_cfg.beep_enabled, s_cfg.light_enabled);
+        ui_show_settings(s_cfg.beep_enabled, s_cfg.light_enabled, s_cfg.language,
+                         s_cfg.screen_timeout_seconds);
         enter_state(APP_SETTINGS, SCREEN_TIMEOUT_MS); /* re-arm the idle fallback */
         break;
     case UI_EVT_TOGGLE_LIGHT:
         s_cfg.light_enabled = !s_cfg.light_enabled;
         storage_save_settings(&s_cfg);
         status_led_set_enabled(s_cfg.light_enabled);
-        ui_show_settings(s_cfg.beep_enabled, s_cfg.light_enabled);
+        ui_show_settings(s_cfg.beep_enabled, s_cfg.light_enabled, s_cfg.language,
+                         s_cfg.screen_timeout_seconds);
         enter_state(APP_SETTINGS, SCREEN_TIMEOUT_MS);
+        break;
+    case UI_EVT_TOGGLE_LANGUAGE:
+        strlcpy(s_cfg.language, strcmp(s_cfg.language, "nl") == 0 ? "en" : "nl",
+                sizeof(s_cfg.language));
+        storage_save_settings(&s_cfg);
+        lvgl_port_lock(0);
+        i18n_set_language(s_cfg.language);
+        lvgl_port_unlock();
+        ui_show_settings(s_cfg.beep_enabled, s_cfg.light_enabled, s_cfg.language,
+                         s_cfg.screen_timeout_seconds);
+        enter_state(APP_SETTINGS, SCREEN_TIMEOUT_MS);
+        break;
+    case UI_EVT_CYCLE_TIMEOUT: {
+        /* Cycle presets: 30 → 60 → 120 → 300 → 0 (Never) → 30 → … */
+        static const uint32_t presets[] = { 30, 60, 120, 300, 0 };
+        static const size_t n_presets = sizeof(presets) / sizeof(presets[0]);
+        size_t idx = 0;
+        for (size_t i = 0; i < n_presets; i++) {
+            if (presets[i] == s_cfg.screen_timeout_seconds) {
+                idx = (i + 1) % n_presets;
+                break;
+            }
+        }
+        s_cfg.screen_timeout_seconds = presets[idx];
+        storage_save_settings(&s_cfg);
+        ui_set_screen_timeout(s_cfg.screen_timeout_seconds); /* immediate effect */
+        ui_show_settings(s_cfg.beep_enabled, s_cfg.light_enabled, s_cfg.language,
+                         s_cfg.screen_timeout_seconds);
+        enter_state(APP_SETTINGS, SCREEN_TIMEOUT_MS);
+        break;
+    }
+    case UI_EVT_SLEEP:
+        if (s_state != APP_IDLE) {
+            /* Race: a scan arrived and changed state before we dequeued the
+             * sleep event.  Discard the sleep and reset idle_tick so it can
+             * re-arm the next time we return to APP_IDLE. */
+            lvgl_port_lock(0);
+            ui_cancel_sleep();
+            lvgl_port_unlock();
+            break;
+        }
+        gm67_set_scanning(false);
+        atomic_store(&s_display_asleep, true);
+        enter_state(APP_SLEEP, 0);
+        lvgl_port_lock(0);
+        ui_show_sleep_visual();
+        lvgl_port_unlock();
+        display_sleep(true);
+        break;
+    case UI_EVT_WAKE:
+        display_sleep(false);
+        gm67_set_scanning(true);
+        atomic_store(&s_display_asleep, false);
+        go_idle();
         break;
     case UI_EVT_DISMISS:
         go_idle();
@@ -347,7 +420,15 @@ void app_main(void)
     ESP_ERROR_CHECK(storage_load(&s_cfg));
 
     ESP_ERROR_CHECK(display_init());
+    lvgl_port_lock(0);
+    esp_err_t ui_err = ui_fonts_init();
+    if (ui_err == ESP_OK) {
+        ui_err = i18n_init(s_cfg.language);
+    }
+    lvgl_port_unlock();
+    ESP_ERROR_CHECK(ui_err);
     ESP_ERROR_CHECK(ui_init(on_ui_event));
+    ui_set_screen_timeout(s_cfg.screen_timeout_seconds);
 
     /* Scan-result LED; the persisted toggle decides whether flashes show. A
      * failure here is non-fatal — the device works without the indicator. */
@@ -376,14 +457,14 @@ void app_main(void)
 #else
     if (!storage_is_provisioned(&s_cfg)) {
         char ap_ssid[16];
-        ui_show_connecting("Starting setup...");
+        ui_show_connecting(tr("starting_setup"));
         ESP_ERROR_CHECK(wifi_prov_run(&s_cfg, ap_ssid, sizeof(ap_ssid)));
         ui_show_provisioning(ap_ssid, s_cfg.ap_pass);
         /* The portal's POST handler saves the config and reboots. */
         vTaskDelay(portMAX_DELAY);
     }
 
-    ui_show_connecting("Connecting to WiFi...");
+    ui_show_connecting(tr("connecting_wifi"));
     esp_err_t ret = wifi_conn_start(&s_cfg, WIFI_TIMEOUT_MS);
     if (ret != ESP_OK) {
         /* Auto-reconnect keeps trying in the background; tell the user and
@@ -439,6 +520,14 @@ void app_main(void)
     while (true) {
         if (xQueueReceive(s_queue, &evt, portMAX_DELAY) != pdTRUE) {
             continue;
+        }
+        /* While sleeping, drop everything except UI_EVT_WAKE; events queued
+         * in the window between idle_tick emitting and APP_SLEEP committing
+         * are stale and must not drive API calls behind the dark panel. */
+        if (s_state == APP_SLEEP) {
+            if (evt.kind != APP_EVT_UI || evt.ui.type != UI_EVT_WAKE) {
+                continue;
+            }
         }
         switch (evt.kind) {
         case APP_EVT_SCAN:

@@ -98,8 +98,9 @@ the SoftAP name and password, and `http://192.168.4.1`.
 
 1. Scan the QR code (or join the `scanner-XXXX` network manually).
 2. Open the captive portal at `http://192.168.4.1`.
-3. Enter your WiFi credentials, the grocy-mealie-sync base URL (for example
-   `http://192.168.1.50:3000`) and the device token.
+3. Select English or Dutch, then enter your WiFi credentials, the
+   grocy-mealie-sync base URL (for example `http://192.168.1.50:3000`) and the
+   device token.
 4. Save; the device reboots and connects.
 
 API URLs may use `http://` or `https://`; HTTPS certificates are validated
@@ -109,7 +110,7 @@ Day-to-day use:
 
 | Screen | Interaction |
 |--------|-------------|
-| Idle | Scan a barcode, or tap the gear for on-device settings (scanner beep, status light) |
+| Idle | Scan a barcode, or tap the gear for on-device settings (scanner beep, status light, language, screen timeout); display blanks after the configured idle time (default 60 s) — tap to wake |
 | Product | Tap **Bought / Opened / Consumed / Shopping**; a coloured flash confirms |
 | Unknown barcode | Link to a suggested or searched product, or create from the OpenFoodFacts proposal |
 

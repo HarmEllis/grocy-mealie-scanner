@@ -1,5 +1,6 @@
 #include "wifi_conn.h"
 #include "captive_dns.h"
+#include "i18n.h"
 
 #include "esp_check.h"
 #include "esp_event.h"
@@ -97,25 +98,32 @@ bool wifi_conn_is_connected(void)
 
 static app_config_t *s_prov_cfg;
 
+static const char *portal_tr(const char *tag)
+{
+    return i18n_tr_for(tag, s_prov_cfg->language);
+}
+
 static const char PORTAL_FORM[] =
     "<!DOCTYPE html><html><head><meta charset='utf-8'>"
     "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-    "<title>grocy-mealie-scanner setup</title>"
+    "<title>%s</title>"
     "<style>body{font-family:system-ui,sans-serif;background:#161617;color:#ededf0;"
     "max-width:420px;margin:0 auto;padding:24px}h1{font-size:20px}"
     "label{display:block;font-size:13px;color:#8b8b93;margin:14px 0 4px}"
-    "input{width:100%%;box-sizing:border-box;padding:10px;border-radius:8px;"
+    "input,select{width:100%%;box-sizing:border-box;padding:10px;border-radius:8px;"
     "border:1px solid #3a3a40;background:#1e1e22;color:#ededf0;font-size:15px}"
     "button{margin-top:20px;width:100%%;padding:12px;border-radius:10px;border:0;"
     "background:#f5c13d;color:#0b0b0c;font-size:15px;font-weight:700}</style></head>"
-    "<body><h1>grocy-mealie-scanner</h1>"
+    "<body><h1>%s</h1>"
     "<form method='POST' action='/save'>"
-    "<label>WiFi network (SSID)</label><input name='ssid' value='%s' required maxlength='32'>"
-    "<label>WiFi password</label><input name='pass' type='password' value='%s' maxlength='64'>"
-    "<label>grocy-mealie-sync base URL</label>"
+    "<label>%s</label><select name='lang'>"
+    "<option value='en'%s>English</option><option value='nl'%s>Nederlands</option></select>"
+    "<label>%s</label><input name='ssid' value='%s' required maxlength='32'>"
+    "<label>%s</label><input name='pass' type='password' value='%s' maxlength='64'>"
+    "<label>%s</label>"
     "<input name='url' value='%s' placeholder='http://192.168.1.10:3000' required maxlength='127'>"
-    "<label>Device token</label><input name='token' value='%s' maxlength='95'>"
-    "<button type='submit'>Save &amp; reboot</button></form></body></html>";
+    "<label>%s</label><input name='token' value='%s' maxlength='95'>"
+    "<button type='submit'>%s</button></form></body></html>";
 
 static bool is_hex_digit(char c)
 {
@@ -186,13 +194,19 @@ static bool form_get_field(const char *body, const char *key, char *dst, size_t 
 static esp_err_t portal_get_handler(httpd_req_t *req)
 {
     /* Heap-allocated: form + values exceed the httpd task stack comfort zone. */
-    size_t cap = sizeof(PORTAL_FORM) + sizeof(app_config_t);
+    size_t cap = sizeof(PORTAL_FORM) + sizeof(app_config_t) + 512;
     char *page = malloc(cap);
     if (page == NULL) {
         return httpd_resp_send_500(req);
     }
-    snprintf(page, cap, PORTAL_FORM, s_prov_cfg->wifi_ssid, s_prov_cfg->wifi_pass,
-             s_prov_cfg->api_url, s_prov_cfg->api_token);
+    bool dutch = strcmp(s_prov_cfg->language, "nl") == 0;
+    snprintf(page, cap, PORTAL_FORM,
+             portal_tr("portal_title"), portal_tr("portal_title"), portal_tr("language"),
+             dutch ? "" : " selected", dutch ? " selected" : "",
+             portal_tr("wifi_network"), s_prov_cfg->wifi_ssid,
+             portal_tr("wifi_password"), s_prov_cfg->wifi_pass,
+             portal_tr("base_url"), s_prov_cfg->api_url,
+             portal_tr("device_token"), s_prov_cfg->api_token, portal_tr("save_reboot"));
     httpd_resp_set_type(req, "text/html");
     esp_err_t err = httpd_resp_send(req, page, HTTPD_RESP_USE_STRLEN);
     free(page);
@@ -207,7 +221,7 @@ static esp_err_t portal_save_handler(httpd_req_t *req)
      * otherwise valid form is still accepted. */
     if (req->content_len == 0 || req->content_len > PORTAL_BODY_MAX) {
         httpd_resp_set_status(req, "413 Payload Too Large");
-        return httpd_resp_send(req, "Form too large", HTTPD_RESP_USE_STRLEN);
+        return httpd_resp_send(req, portal_tr("form_too_large"), HTTPD_RESP_USE_STRLEN);
     }
     char *body = malloc(req->content_len + 1);
     if (body == NULL) {
@@ -228,15 +242,22 @@ static esp_err_t portal_save_handler(httpd_req_t *req)
      * live config; start from it to preserve fields the form does not carry
      * (e.g. the generated ap_pass). Commit only once fully valid. */
     app_config_t cfg = *s_prov_cfg;
+    char language[STORAGE_LANGUAGE_LEN];
     bool ok = form_get_field(body, "ssid", cfg.wifi_ssid, sizeof(cfg.wifi_ssid));
     ok = form_get_field(body, "pass", cfg.wifi_pass, sizeof(cfg.wifi_pass)) && ok;
     ok = form_get_field(body, "url", cfg.api_url, sizeof(cfg.api_url)) && ok;
     ok = form_get_field(body, "token", cfg.api_token, sizeof(cfg.api_token)) && ok;
+    ok = form_get_field(body, "lang", language, sizeof(language)) && ok;
+    if (i18n_language_is_supported(language)) {
+        strlcpy(cfg.language, language, sizeof(cfg.language));
+    } else {
+        ok = false;
+    }
     free(body);
 
     if (!ok) {
         httpd_resp_set_status(req, "400 Bad Request");
-        return httpd_resp_send(req, "Malformed form encoding", HTTPD_RESP_USE_STRLEN);
+        return httpd_resp_send(req, portal_tr("malformed_form"), HTTPD_RESP_USE_STRLEN);
     }
 
     /* Strip a trailing slash so the API client can append paths verbatim. */
@@ -247,7 +268,7 @@ static esp_err_t portal_save_handler(httpd_req_t *req)
 
     if (cfg.wifi_ssid[0] == '\0' || cfg.api_url[0] == '\0') {
         httpd_resp_set_status(req, "400 Bad Request");
-        return httpd_resp_send(req, "SSID and base URL are required", HTTPD_RESP_USE_STRLEN);
+        return httpd_resp_send(req, portal_tr("required_fields"), HTTPD_RESP_USE_STRLEN);
     }
 
     *s_prov_cfg = cfg;
@@ -257,12 +278,14 @@ static esp_err_t portal_save_handler(httpd_req_t *req)
     }
 
     httpd_resp_set_type(req, "text/html");
-    httpd_resp_send(req,
-                    "<html><body style='font-family:sans-serif;background:#161617;"
-                    "color:#ededf0;text-align:center;padding-top:40px'>"
-                    "<h2>Saved!</h2><p>The scanner reboots and connects to your WiFi.</p>"
-                    "</body></html>",
-                    HTTPD_RESP_USE_STRLEN);
+    char response[320];
+    snprintf(response, sizeof(response),
+             "<html><body style='font-family:sans-serif;background:#161617;"
+             "color:#ededf0;text-align:center;padding-top:40px'>"
+             "<h2>%s</h2><p>%s</p></body></html>",
+             i18n_tr_for("saved", cfg.language),
+             i18n_tr_for("rebooting", cfg.language));
+    httpd_resp_send(req, response, HTTPD_RESP_USE_STRLEN);
     ESP_LOGI(TAG, "provisioned, rebooting");
     vTaskDelay(pdMS_TO_TICKS(1500));
     esp_restart();

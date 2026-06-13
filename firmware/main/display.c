@@ -151,3 +151,27 @@ void display_backlight(bool on)
 {
     gpio_set_level(BOARD_LCD_PIN_BL, on ? 1 : 0);
 }
+
+void display_sleep(bool sleep)
+{
+    if (sleep) {
+        /* Backlight first so the user sees black immediately, then tell the
+         * panel to stop driving — avoids a white flash on some ILI9341 lots. */
+        lvgl_port_lock(0);
+        display_backlight(false);
+        esp_lcd_panel_disp_on_off(s_panel, false);
+        lvgl_port_unlock();
+        ESP_LOGI(TAG, "display sleeping");
+    } else {
+        /* Wake panel, force a full redraw while LVGL is locked so the SPI
+         * transfer completes before we light the backlight. */
+        lvgl_port_lock(0);
+        esp_lcd_panel_disp_on_off(s_panel, true);
+        lv_obj_invalidate(lv_screen_active());
+        lv_obj_invalidate(lv_layer_top());
+        lv_refr_now(NULL);
+        lvgl_port_unlock();
+        display_backlight(true);
+        ESP_LOGI(TAG, "display awake");
+    }
+}
