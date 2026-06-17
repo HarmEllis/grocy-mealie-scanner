@@ -49,6 +49,15 @@ extern const size_t     gm67_config_seq_len;
 extern const gm67_cmd_t gm67_cmd_beep_on;
 extern const gm67_cmd_t gm67_cmd_beep_off;
 
+/* Immediate control commands (§3, Opcode Table).  All are fire-and-forget
+ * PARAM_SEND frames queued via the owning task, never awaited for ACK. */
+extern const gm67_cmd_t gm67_cmd_scan_enable;   /* 0xE9: resume scan engine   */
+extern const gm67_cmd_t gm67_cmd_scan_disable;  /* 0xEA: pause scan engine    */
+extern const gm67_cmd_t gm67_cmd_start_decode;  /* 0xE4: one-shot (Host mode) */
+extern const gm67_cmd_t gm67_cmd_stop_decode;   /* 0xE5: abort active scan    */
+extern const gm67_cmd_t gm67_cmd_beep_cue;      /* 0xE6: immediate single beep */
+extern const gm67_cmd_t gm67_cmd_sleep;         /* 0xEB: enter low-power sleep */
+
 /* Validate a complete frame's trailing 16-bit checksum. Used by tests. */
 bool gm67_frame_valid(const uint8_t *frame, size_t len);
 

@@ -346,6 +346,22 @@ esp_err_t gm67_set_beep(bool enabled)
 
 esp_err_t gm67_set_scanning(bool enabled)
 {
+    /* Software gate: immediate effect, no UART needed. */
     atomic_store(&s_scanning_enabled, enabled);
+
+    /* Hardware gate: send SCAN_ENABLE / SCAN_DISABLE to the module so the scan
+     * engine actually idles while the display is off.  Best-effort, like
+     * gm67_set_beep(): a dropped command is cosmetic — the software gate above
+     * is the authoritative guard. */
+    if (s_cmd_queue != NULL) {
+        const gm67_cmd_t *cmd = enabled ? &gm67_cmd_scan_enable
+                                        : &gm67_cmd_scan_disable;
+        gm67_cmd_msg_t msg;
+        if (cmd->len <= sizeof(msg.bytes)) {
+            memcpy(msg.bytes, cmd->bytes, cmd->len);
+            msg.len = cmd->len;
+            xQueueSend(s_cmd_queue, &msg, 0);
+        }
+    }
     return ESP_OK;
 }

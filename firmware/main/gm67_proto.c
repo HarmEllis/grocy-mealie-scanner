@@ -23,6 +23,16 @@ static const uint8_t CMD_BEEP_OFF[]       = {0x07,0xC6,0x04,0x08,0x00,0x38,0x00,
 /* Single scan time → 3s */
 static const uint8_t CMD_SCANTIME_3S[]    = {0x08,0xC6,0x04,0x08,0x00,0xF2,0xFA,0x03,0xFD,0x37};
 
+/* ---- Control commands (§3, Opcode Table) --------------------------------- *
+ * These trigger immediate module actions rather than writing parameter memory.
+ * Checksums verified: chk = 0x10000 - (sum of pre-checksum bytes & 0xFFFF).   */
+static const uint8_t CMD_SCAN_ENABLE[]  = {0x04,0xE9,0x04,0x00,0xFF,0x0F};
+static const uint8_t CMD_SCAN_DISABLE[] = {0x04,0xEA,0x04,0x00,0xFF,0x0E};
+static const uint8_t CMD_START_DECODE[] = {0x04,0xE4,0x04,0x00,0xFF,0x14};
+static const uint8_t CMD_STOP_DECODE[]  = {0x04,0xE5,0x04,0x00,0xFF,0x13};
+static const uint8_t CMD_BEEP_CUE[]     = {0x05,0xE6,0x04,0x00,0x01,0xFF,0x10};
+static const uint8_t CMD_SLEEP[]        = {0x04,0xEB,0x04,0x00,0xFF,0x0D};
+
 #define CMD(arr, name) { (arr), (uint8_t)sizeof(arr), (name) }
 
 const gm67_cmd_t gm67_config_seq[] = {
@@ -41,6 +51,14 @@ const size_t gm67_config_seq_len = sizeof(gm67_config_seq) / sizeof(gm67_config_
  * checksums are asserted once by the host tests that cover the config seq. */
 const gm67_cmd_t gm67_cmd_beep_on  = CMD(CMD_BEEP_ON,  "beep=on");
 const gm67_cmd_t gm67_cmd_beep_off = CMD(CMD_BEEP_OFF, "beep=off");
+
+/* Immediate control commands (§3, Opcode Table). */
+const gm67_cmd_t gm67_cmd_scan_enable  = CMD(CMD_SCAN_ENABLE,  "scan-enable");
+const gm67_cmd_t gm67_cmd_scan_disable = CMD(CMD_SCAN_DISABLE, "scan-disable");
+const gm67_cmd_t gm67_cmd_start_decode = CMD(CMD_START_DECODE, "start-decode");
+const gm67_cmd_t gm67_cmd_stop_decode  = CMD(CMD_STOP_DECODE,  "stop-decode");
+const gm67_cmd_t gm67_cmd_beep_cue     = CMD(CMD_BEEP_CUE,     "beep-cue");
+const gm67_cmd_t gm67_cmd_sleep        = CMD(CMD_SLEEP,         "sleep");
 
 /* ---- Reply frames -------------------------------------------------------- */
 
