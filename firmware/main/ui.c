@@ -4,6 +4,7 @@
 #include "ui.h"
 
 #include "i18n.h"
+#include "touch_calibration.h"
 #include "ui_fonts.h"
 #include "esp_log.h"
 #include "esp_lvgl_port.h"
@@ -57,6 +58,7 @@ static lv_obj_t *s_sleep_overlay = NULL;
 /* Pending-state carried between screens */
 static char s_pending_barcode[API_BARCODE_LEN];
 static lv_obj_t *s_search_results_box;
+static lv_obj_t *s_touch_cal_target;
 
 static bool emit(ui_event_type_t type, api_action_t action, int product_id,
                  const char *text)
@@ -223,6 +225,7 @@ static lv_obj_t *screen_reset(const char *status_text, lv_color_t dot_color,
     s_status_label = NULL;
     s_status_clock = NULL;
     s_search_results_box = NULL;
+    s_touch_cal_target = NULL;
     s_status_shows_conn = false; /* only ui_show_idle re-enables this */
 
     lv_obj_set_style_bg_color(s_screen, COL_DEVICE, 0);
@@ -1046,6 +1049,12 @@ static void cycle_timeout_cb(lv_event_t *e)
     emit(UI_EVT_CYCLE_TIMEOUT, 0, 0, NULL);
 }
 
+static void open_touch_cal_cb(lv_event_t *e)
+{
+    (void)e;
+    emit(UI_EVT_OPEN_TOUCH_CAL, 0, 0, NULL);
+}
+
 /* One toggle card: title + subtitle + a state-only switch (the whole row is the
  * tap target, so the switch itself does not handle clicks). */
 static void make_settings_row(lv_obj_t *parent, int y, const char *title,
@@ -1152,6 +1161,36 @@ static void make_timeout_row(lv_obj_t *parent, int y, uint32_t timeout_seconds)
     lv_obj_align(value, LV_ALIGN_RIGHT_MID, 0, 0);
 }
 
+static void make_navigation_row(lv_obj_t *parent, int y, const char *title,
+                                lv_event_cb_t cb)
+{
+    lv_obj_t *row = lv_obj_create(parent);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_size(row, 212, 48);
+    lv_obj_set_pos(row, 0, y);
+    lv_obj_set_style_radius(row, 11, 0);
+    lv_obj_set_style_bg_color(row, COL_CARD, 0);
+    lv_obj_set_style_bg_opa(row, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(row, COL_BORDER, 0);
+    lv_obj_set_style_border_width(row, 1, 0);
+    lv_obj_set_style_pad_hor(row, 12, 0);
+    lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_bg_color(row, lv_color_hex(0x26262b), LV_STATE_PRESSED);
+    lv_obj_add_event_cb(row, cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *label = lv_label_create(row);
+    lv_label_set_text(label, title);
+    lv_obj_set_style_text_font(label, &gms_font_14, 0);
+    lv_obj_set_style_text_color(label, COL_TEXT, 0);
+    lv_obj_align(label, LV_ALIGN_LEFT_MID, 0, 0);
+
+    lv_obj_t *chevron = lv_label_create(row);
+    lv_label_set_text(chevron, LV_SYMBOL_RIGHT);
+    lv_obj_set_style_text_font(chevron, &gms_font_12, 0);
+    lv_obj_set_style_text_color(chevron, COL_BLUE, 0);
+    lv_obj_align(chevron, LV_ALIGN_RIGHT_MID, 0, 0);
+}
+
 void ui_show_settings(bool beep, bool light, const char *language,
                       uint32_t timeout_seconds)
 {
@@ -1207,16 +1246,160 @@ void ui_show_settings(bool beep, bool light, const char *language,
                       light, toggle_light_cb);
     make_language_row(body, 162, language);
     make_timeout_row(body, 218, timeout_seconds);
+    make_navigation_row(body, 274, tr("touch_calibrate"), open_touch_cal_cb);
 
-    /* Note placed after the last row with a fixed offset so it doesn't
-     * collide with the new timeout row (which would happen with BOTTOM_MID). */
+    /* Note placed after the last row with a fixed offset so it remains part
+     * of the scrollable content instead of colliding with the final card. */
     lv_obj_t *note = lv_label_create(body);
     lv_label_set_text(note, tr("changes_next_scan"));
     lv_obj_set_style_text_font(note, &gms_font_10, 0);
     lv_obj_set_style_text_color(note, COL_DIM2, 0);
     lv_obj_set_width(note, 212);
     lv_obj_set_style_text_align(note, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(note, 0, 272);
+    lv_obj_set_pos(note, 0, 330);
+    lvgl_port_unlock();
+}
+
+/* ------------------------------------------------------------------ */
+/* Touch calibration                                                   */
+/* ------------------------------------------------------------------ */
+
+static void touch_cal_tap_cb(lv_event_t *e)
+{
+    (void)e;
+    emit(UI_EVT_CAL_TAP, 0, 0, NULL);
+}
+
+static void touch_cal_release_cb(lv_event_t *e)
+{
+    (void)e;
+    emit(UI_EVT_CAL_RELEASE, 0, 0, NULL);
+}
+
+static void position_touch_cal_target(uint8_t target_index)
+{
+    static const lv_point_t targets[TOUCH_CAL_TARGET_COUNT] = {
+        { TOUCH_CAL_TARGET_LEFT, TOUCH_CAL_TARGET_TOP },
+        { TOUCH_CAL_TARGET_RIGHT, TOUCH_CAL_TARGET_TOP },
+        { TOUCH_CAL_TARGET_LEFT, TOUCH_CAL_TARGET_BOTTOM },
+        { TOUCH_CAL_TARGET_RIGHT, TOUCH_CAL_TARGET_BOTTOM },
+    };
+    if (s_touch_cal_target == NULL || target_index >= TOUCH_CAL_TARGET_COUNT) {
+        return;
+    }
+    lv_obj_set_pos(s_touch_cal_target, targets[target_index].x - 16,
+                   targets[target_index].y - 16);
+}
+
+void ui_show_touch_calibration(void)
+{
+    lvgl_port_lock(0);
+    lv_obj_t *content = screen_reset(NULL, COL_BLUE, false);
+
+    lv_obj_t *title = lv_label_create(content);
+    lv_label_set_text(title, tr("touch_calibrate"));
+    lv_obj_set_style_text_font(title, &gms_font_18, 0);
+    lv_obj_set_style_text_color(title, COL_TEXT, 0);
+    lv_obj_align(title, LV_ALIGN_CENTER, 0, -18);
+
+    lv_obj_t *instruction = lv_label_create(content);
+    lv_label_set_text(instruction, tr("touch_cal_instr"));
+    lv_obj_set_style_text_font(instruction, &gms_font_10, 0);
+    lv_obj_set_style_text_color(instruction, COL_DIM, 0);
+    lv_obj_align(instruction, LV_ALIGN_CENTER, 0, 12);
+
+    s_touch_cal_target = lv_obj_create(content);
+    lv_obj_remove_style_all(s_touch_cal_target);
+    lv_obj_set_size(s_touch_cal_target, 32, 32);
+    lv_obj_set_style_radius(s_touch_cal_target, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_border_color(s_touch_cal_target, COL_BLUE, 0);
+    lv_obj_set_style_border_width(s_touch_cal_target, 2, 0);
+    lv_obj_set_style_bg_color(s_touch_cal_target, COL_BLUE, 0);
+    lv_obj_set_style_bg_opa(s_touch_cal_target, 24, 0);
+
+    lv_obj_t *horizontal = lv_obj_create(s_touch_cal_target);
+    lv_obj_remove_style_all(horizontal);
+    lv_obj_set_size(horizontal, 20, 2);
+    lv_obj_set_style_bg_color(horizontal, COL_BLUE, 0);
+    lv_obj_set_style_bg_opa(horizontal, LV_OPA_COVER, 0);
+    lv_obj_center(horizontal);
+
+    lv_obj_t *vertical = lv_obj_create(s_touch_cal_target);
+    lv_obj_remove_style_all(vertical);
+    lv_obj_set_size(vertical, 2, 20);
+    lv_obj_set_style_bg_color(vertical, COL_BLUE, 0);
+    lv_obj_set_style_bg_opa(vertical, LV_OPA_COVER, 0);
+    lv_obj_center(vertical);
+    position_touch_cal_target(0);
+
+    lv_obj_t *tap_layer = lv_obj_create(content);
+    lv_obj_remove_style_all(tap_layer);
+    lv_obj_set_size(tap_layer, 240, 320);
+    lv_obj_set_pos(tap_layer, 0, 0);
+    lv_obj_add_flag(tap_layer, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(tap_layer, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(tap_layer, touch_cal_tap_cb, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(tap_layer, touch_cal_release_cb, LV_EVENT_RELEASED, NULL);
+
+    lv_obj_t *back = lv_obj_create(content);
+    lv_obj_remove_style_all(back);
+    lv_obj_set_size(back, 112, 30);
+    lv_obj_align(back, LV_ALIGN_BOTTOM_MID, 0, -2);
+    lv_obj_add_flag(back, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_radius(back, 8, 0);
+    lv_obj_set_style_bg_color(back, COL_CARD, 0);
+    lv_obj_set_style_bg_opa(back, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(back, lv_color_hex(0x26262b), LV_STATE_PRESSED);
+    lv_obj_add_event_cb(back, dismiss_cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *back_label = lv_label_create(back);
+    char back_text[32];
+    snprintf(back_text, sizeof(back_text), LV_SYMBOL_LEFT " %s", tr("back"));
+    lv_label_set_text(back_label, back_text);
+    lv_obj_set_style_text_font(back_label, &gms_font_10, 0);
+    lv_obj_set_style_text_color(back_label, COL_DIM, 0);
+    lv_obj_center(back_label);
+    lvgl_port_unlock();
+}
+
+void ui_touch_calibration_set_target(uint8_t target_index)
+{
+    lvgl_port_lock(0);
+    position_touch_cal_target(target_index);
+    lvgl_port_unlock();
+}
+
+void ui_show_touch_calibration_result(bool success, bool save_failed)
+{
+    lvgl_port_lock(0);
+    lv_obj_t *content = screen_reset(NULL, success ? COL_GREEN : COL_CORAL, false);
+
+    lv_obj_t *circle = lv_obj_create(content);
+    lv_obj_remove_style_all(circle);
+    lv_obj_set_size(circle, 64, 64);
+    lv_obj_align(circle, LV_ALIGN_CENTER, 0, -28);
+    lv_obj_set_style_radius(circle, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(circle, success ? COL_GREEN : COL_CORAL, 0);
+    lv_obj_set_style_bg_opa(circle, 36, 0);
+    lv_obj_set_style_border_color(circle, success ? COL_GREEN : COL_CORAL, 0);
+    lv_obj_set_style_border_width(circle, 2, 0);
+
+    lv_obj_t *icon = lv_label_create(circle);
+    lv_label_set_text(icon, success ? LV_SYMBOL_OK : LV_SYMBOL_WARNING);
+    lv_obj_set_style_text_font(icon, &gms_font_22, 0);
+    lv_obj_set_style_text_color(icon, success ? COL_GREEN : COL_CORAL, 0);
+    lv_obj_center(icon);
+
+    lv_obj_t *message = lv_label_create(content);
+    lv_label_set_text(message, tr(success ? "touch_cal_done" :
+                                  (save_failed ? "touch_cal_save_failed" :
+                                                 "touch_cal_invalid")));
+    lv_obj_set_style_text_font(message, &gms_font_14, 0);
+    lv_obj_set_style_text_color(message, COL_TEXT, 0);
+    lv_obj_set_width(message, 208);
+    lv_label_set_long_mode(message, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_align(message, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(message, LV_ALIGN_CENTER, 0, 42);
     lvgl_port_unlock();
 }
 

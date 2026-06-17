@@ -66,6 +66,10 @@ esp_err_t storage_load(app_config_t *cfg)
         cfg->beep_enabled = load_flag(h, "beep", true);
         cfg->light_enabled = load_flag(h, "light", true);
         cfg->screen_timeout_seconds = load_u32(h, "scrn_to", 60);
+        cfg->touch_cal_x_left = load_u32(h, "tcal_xl", 0);
+        cfg->touch_cal_x_right = load_u32(h, "tcal_xr", 0);
+        cfg->touch_cal_y_top = load_u32(h, "tcal_yt", 0);
+        cfg->touch_cal_y_bottom = load_u32(h, "tcal_yb", 0);
         nvs_close(h);
     }
     if (!i18n_language_is_supported(cfg->language)) {
@@ -124,6 +128,22 @@ esp_err_t storage_save_settings(const app_config_t *cfg)
     nvs_close(h);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "settings save failed: %s", esp_err_to_name(err));
+    }
+    return err;
+}
+
+esp_err_t storage_save_touch_cal(const app_config_t *cfg)
+{
+    nvs_handle_t h;
+    ESP_RETURN_ON_ERROR(nvs_open(NS, NVS_READWRITE, &h), TAG, "open");
+    esp_err_t err = nvs_set_u32(h, "tcal_xl", cfg->touch_cal_x_left);
+    if (err == ESP_OK) err = nvs_set_u32(h, "tcal_xr", cfg->touch_cal_x_right);
+    if (err == ESP_OK) err = nvs_set_u32(h, "tcal_yt", cfg->touch_cal_y_top);
+    if (err == ESP_OK) err = nvs_set_u32(h, "tcal_yb", cfg->touch_cal_y_bottom);
+    if (err == ESP_OK) err = nvs_commit(h);
+    nvs_close(h);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "touch calibration save failed: %s", esp_err_to_name(err));
     }
     return err;
 }

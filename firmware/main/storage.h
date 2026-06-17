@@ -21,6 +21,10 @@ typedef struct {
     bool beep_enabled;  /* GM67 good-read beep (settings screen; default on) */
     bool light_enabled; /* WS2812 result flash (settings screen; default on) */
     uint32_t screen_timeout_seconds; /* backlight+panel sleep after idle; 0 = never */
+    uint32_t touch_cal_x_left;
+    uint32_t touch_cal_x_right;
+    uint32_t touch_cal_y_top;
+    uint32_t touch_cal_y_bottom;
 } app_config_t;
 
 esp_err_t storage_init(void);
@@ -34,6 +38,9 @@ esp_err_t storage_save(const app_config_t *cfg);
 /* Persists only the beep/light/language settings (settings screen).
  * Cheaper and rarer than storage_save; leaves the credential keys untouched. */
 esp_err_t storage_save_settings(const app_config_t *cfg);
+
+/* Persists only the four touch-calibration samples in one NVS commit. */
+esp_err_t storage_save_touch_cal(const app_config_t *cfg);
 
 /* Wipes the config (factory reset via long BOOT press). */
 esp_err_t storage_erase(void);

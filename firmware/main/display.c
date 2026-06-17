@@ -1,5 +1,6 @@
 #include "display.h"
 #include "board.h"
+#include "touch_calibration.h"
 
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
@@ -11,6 +12,8 @@
 #include "esp_check.h"
 #include "esp_log.h"
 #include "esp_lvgl_port.h"
+#include "freertos/FreeRTOS.h"
+#include <stdlib.h>
 
 static const char *TAG = "display";
 
@@ -19,6 +22,63 @@ static const char *TAG = "display";
 static esp_lcd_panel_io_handle_t s_panel_io;
 static esp_lcd_panel_handle_t s_panel;
 static esp_lcd_touch_handle_t s_touch;
+static portMUX_TYPE s_touch_cal_lock = portMUX_INITIALIZER_UNLOCKED;
+static float s_touch_scale_x = 1.0f;
+static float s_touch_offset_x;
+static float s_touch_scale_y = 1.0f;
+static float s_touch_offset_y;
+static bool s_touch_capture_enabled;
+static bool s_touch_sample_valid;
+static uint16_t s_touch_sample_x;
+static uint16_t s_touch_sample_y;
+
+static uint16_t clamp_coordinate(float value, uint16_t maximum)
+{
+    if (value <= 0.0f) {
+        return 0;
+    }
+    if (value >= maximum) {
+        return maximum;
+    }
+    return (uint16_t)(value + 0.5f);
+}
+
+static void touch_process_coords(esp_lcd_touch_handle_t tp, uint16_t *x,
+                                 uint16_t *y, uint16_t *strength,
+                                 uint8_t *point_num, uint8_t max_point_num)
+{
+    (void)tp;
+    (void)strength;
+    (void)max_point_num;
+
+    float scale_x;
+    float offset_x;
+    float scale_y;
+    float offset_y;
+
+    portENTER_CRITICAL(&s_touch_cal_lock);
+    if (s_touch_capture_enabled) {
+        if (*point_num > 0 && !s_touch_sample_valid) {
+            s_touch_sample_x = x[0];
+            s_touch_sample_y = y[0];
+            s_touch_sample_valid = true;
+        }
+        portEXIT_CRITICAL(&s_touch_cal_lock);
+        return;
+    }
+    scale_x = s_touch_scale_x;
+    offset_x = s_touch_offset_x;
+    scale_y = s_touch_scale_y;
+    offset_y = s_touch_offset_y;
+    portEXIT_CRITICAL(&s_touch_cal_lock);
+
+    for (uint8_t i = 0; i < *point_num; i++) {
+        x[i] = clamp_coordinate(scale_x * x[i] + offset_x,
+                                BOARD_LCD_H_RES - 1);
+        y[i] = clamp_coordinate(scale_y * y[i] + offset_y,
+                                BOARD_LCD_V_RES - 1);
+    }
+}
 
 static esp_err_t lcd_init(void)
 {
@@ -88,6 +148,7 @@ static esp_err_t touch_init(void)
             .reset = 0,
             .interrupt = 0,
         },
+        .process_coordinates = touch_process_coords,
     };
     ESP_RETURN_ON_ERROR(esp_lcd_touch_new_i2c_ft5x06(tp_io, &tp_cfg, &s_touch), TAG, "ft5x06");
     return ESP_OK;
@@ -174,4 +235,67 @@ void display_sleep(bool sleep)
         display_backlight(true);
         ESP_LOGI(TAG, "display awake");
     }
+}
+
+bool display_touch_set_calibration(int32_t x_left, int32_t x_right,
+                                   int32_t y_top, int32_t y_bottom)
+{
+    int32_t x_span = x_right - x_left;
+    int32_t y_span = y_bottom - y_top;
+    if (abs(x_span) <= TOUCH_CAL_MIN_SPAN ||
+        abs(y_span) <= TOUCH_CAL_MIN_SPAN) {
+        return false;
+    }
+
+    float scale_x = (float)(TOUCH_CAL_TARGET_RIGHT - TOUCH_CAL_TARGET_LEFT) /
+                    (float)x_span;
+    float scale_y = (float)(TOUCH_CAL_TARGET_BOTTOM - TOUCH_CAL_TARGET_TOP) /
+                    (float)y_span;
+    float offset_x = TOUCH_CAL_TARGET_LEFT - scale_x * x_left;
+    float offset_y = TOUCH_CAL_TARGET_TOP - scale_y * y_top;
+
+    portENTER_CRITICAL(&s_touch_cal_lock);
+    s_touch_scale_x = scale_x;
+    s_touch_offset_x = offset_x;
+    s_touch_scale_y = scale_y;
+    s_touch_offset_y = offset_y;
+    portEXIT_CRITICAL(&s_touch_cal_lock);
+    return true;
+}
+
+void display_touch_set_identity(void)
+{
+    portENTER_CRITICAL(&s_touch_cal_lock);
+    s_touch_scale_x = 1.0f;
+    s_touch_offset_x = 0.0f;
+    s_touch_scale_y = 1.0f;
+    s_touch_offset_y = 0.0f;
+    portEXIT_CRITICAL(&s_touch_cal_lock);
+}
+
+void display_touch_capture(bool enabled)
+{
+    portENTER_CRITICAL(&s_touch_cal_lock);
+    s_touch_capture_enabled = enabled;
+    if (enabled) {
+        s_touch_sample_valid = false;
+    }
+    portEXIT_CRITICAL(&s_touch_cal_lock);
+}
+
+bool display_touch_get_sample(uint16_t *x, uint16_t *y)
+{
+    if (x == NULL || y == NULL) {
+        return false;
+    }
+
+    portENTER_CRITICAL(&s_touch_cal_lock);
+    bool valid = s_touch_sample_valid;
+    if (valid) {
+        *x = s_touch_sample_x;
+        *y = s_touch_sample_y;
+        s_touch_sample_valid = false;
+    }
+    portEXIT_CRITICAL(&s_touch_cal_lock);
+    return valid;
 }
