@@ -31,9 +31,12 @@ esp_err_t gm67_init(gm67_scan_cb_t cb, uint32_t debounce_ms);
  * be called after gm67_init(). */
 esp_err_t gm67_set_beep(bool enabled);
 
-/* Enable or disable the software scanning gate (screen sleep feature).
- * enabled=true  → submit_code() forwards scans normally.
- * enabled=false → submit_code() drops all decoded frames immediately.
- * Pure atomic flag write: no hardware interaction, no command queue.
+/* Enable or disable the scanning gate (screen sleep feature).
+ * enabled=false → software gate closes immediately (authoritative guard), then
+ *   SCAN_DISABLE is queued best-effort; always returns ESP_OK.
+ * enabled=true  → SCAN_ENABLE is queued first; the software gate opens only
+ *   on success.  Returns ESP_ERR_NO_MEM if the command queue is full (gate
+ *   stays closed so the caller can retry), ESP_ERR_INVALID_STATE if called
+ *   before gm67_init().
  * Safe to call from any task after gm67_init(). */
 esp_err_t gm67_set_scanning(bool enabled);

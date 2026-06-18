@@ -346,22 +346,40 @@ esp_err_t gm67_set_beep(bool enabled)
 
 esp_err_t gm67_set_scanning(bool enabled)
 {
-    /* Software gate: immediate effect, no UART needed. */
-    atomic_store(&s_scanning_enabled, enabled);
-
-    /* Hardware gate: send SCAN_ENABLE / SCAN_DISABLE to the module so the scan
-     * engine actually idles while the display is off.  Best-effort, like
-     * gm67_set_beep(): a dropped command is cosmetic — the software gate above
-     * is the authoritative guard. */
-    if (s_cmd_queue != NULL) {
-        const gm67_cmd_t *cmd = enabled ? &gm67_cmd_scan_enable
-                                        : &gm67_cmd_scan_disable;
-        gm67_cmd_msg_t msg;
-        if (cmd->len <= sizeof(msg.bytes)) {
-            memcpy(msg.bytes, cmd->bytes, cmd->len);
-            msg.len = cmd->len;
-            xQueueSend(s_cmd_queue, &msg, 0);
+    if (!enabled) {
+        /* Disable: set the software gate first so codes racing through before
+         * SCAN_DISABLE reaches hardware are still blocked.  The hardware
+         * command is best-effort — a queue-full means the module keeps
+         * scanning, but the software gate is the authoritative guard. */
+        atomic_store(&s_scanning_enabled, false);
+        if (s_cmd_queue != NULL) {
+            gm67_cmd_msg_t msg;
+            if (gm67_cmd_scan_disable.len <= sizeof(msg.bytes)) {
+                memcpy(msg.bytes, gm67_cmd_scan_disable.bytes,
+                       gm67_cmd_scan_disable.len);
+                msg.len = gm67_cmd_scan_disable.len;
+                xQueueSend(s_cmd_queue, &msg, 0); /* best-effort */
+            }
         }
+        return ESP_OK;
     }
+
+    /* Enable (wake-up): queue SCAN_ENABLE *before* opening the software gate.
+     * If the hardware command fails to queue, the module stays idle — opening
+     * the gate would make the caller believe scanning is active when it is not.
+     * Leave the gate closed and report the error so the caller can retry. */
+    if (s_cmd_queue == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    gm67_cmd_msg_t msg;
+    if (gm67_cmd_scan_enable.len > sizeof(msg.bytes)) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    memcpy(msg.bytes, gm67_cmd_scan_enable.bytes, gm67_cmd_scan_enable.len);
+    msg.len = gm67_cmd_scan_enable.len;
+    if (xQueueSend(s_cmd_queue, &msg, 0) != pdTRUE) {
+        return ESP_ERR_NO_MEM; /* gate stays closed; caller should retry */
+    }
+    atomic_store(&s_scanning_enabled, true);
     return ESP_OK;
 }

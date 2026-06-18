@@ -414,7 +414,9 @@ static void handle_ui(const ui_event_t *evt)
         break;
     case UI_EVT_WAKE:
         display_sleep(false);
-        gm67_set_scanning(true);
+        if (gm67_set_scanning(true) != ESP_OK) {
+            ESP_LOGW(TAG, "wake: SCAN_ENABLE not queued; scanner may stay idle");
+        }
         atomic_store(&s_display_asleep, false);
         go_idle();
         break;
