@@ -16,11 +16,13 @@ typedef enum {
     UI_EVT_SEARCH_PICK,      /* arg.product_id */
     UI_EVT_DISMISS,          /* "scan again" / flash tapped / back to idle */
     UI_EVT_OPEN_SETTINGS,    /* gear tapped on the idle status bar */
-    UI_EVT_TOGGLE_BEEP,      /* scanner-beep row tapped on the settings screen */
-    UI_EVT_TOGGLE_LIGHT,     /* status-light row tapped on the settings screen */
-    UI_EVT_TOGGLE_LANGUAGE,  /* language row tapped on the settings screen */
-    UI_EVT_CYCLE_TIMEOUT,    /* screen-timeout row tapped on the settings screen */
-    UI_EVT_OPEN_TOUCH_CAL,   /* touch-calibration row tapped */
+    UI_EVT_CYCLE_BEEP,           /* scanner-beep row tapped on the settings screen */
+    UI_EVT_TOGGLE_LIGHT,         /* status-light row tapped on the settings screen */
+    UI_EVT_TOGGLE_LANGUAGE,      /* language row tapped on the settings screen */
+    UI_EVT_CYCLE_TIMEOUT,        /* screen-timeout row tapped on the settings screen */
+    UI_EVT_CYCLE_SCANNER_LIGHT,  /* scanner light row tapped on the settings screen */
+    UI_EVT_CYCLE_COLLIMATION,    /* collimation row tapped on the settings screen */
+    UI_EVT_OPEN_TOUCH_CAL,       /* touch-calibration row tapped */
     UI_EVT_CAL_TAP,          /* calibration overlay pressed; raw sample is ready */
     UI_EVT_CAL_RELEASE,      /* calibration overlay released; arm next sample */
     UI_EVT_SLEEP,            /* touch inactivity exceeded the configured timeout */
@@ -54,8 +56,9 @@ void ui_show_proposal(const char *initial_name);
 void ui_show_search(void);
 void ui_show_search_results(const api_search_result_t *results);
 void ui_show_error(const char *message);
-void ui_show_settings(bool beep, bool light, const char *language,
-                      uint32_t timeout_seconds);
+void ui_show_settings(uint8_t beep_level, bool light, const char *language,
+                      uint32_t timeout_seconds, uint8_t scanner_light,
+                      uint8_t collimation);
 void ui_show_touch_calibration(void);
 void ui_touch_calibration_set_target(uint8_t target_index);
 void ui_show_touch_calibration_result(bool success, bool save_failed);

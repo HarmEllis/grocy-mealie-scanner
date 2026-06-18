@@ -2,26 +2,21 @@
 
 #include <string.h>
 
-/* ---- Command tables (literal byte strings from the manual, Appendix 6) ---- */
+/* ---- Command byte arrays ------------------------------------------------- */
 
-/* Comm interface → Serial */
-static const uint8_t CMD_IFACE_SERIAL[]   = {0x08,0xC6,0x04,0x08,0x00,0xF2,0x01,0x00,0xFE,0x33};
-/* Trigger mode → Continuous */
-static const uint8_t CMD_TRIGGER_CONT[]   = {0x07,0xC6,0x04,0x08,0x00,0x8A,0x04,0xFE,0x99};
-/* Scan data send format → Code only */
-static const uint8_t CMD_SEND_CODE_ONLY[] = {0x07,0xC6,0x04,0x08,0x00,0xEB,0x00,0xFE,0x3C};
-/* Terminator → CR LF */
-static const uint8_t CMD_TERM_CRLF[]      = {0x08,0xC6,0x04,0x08,0x00,0xF2,0x05,0x01,0xFE,0x2E};
-/* STX/ETX → Forbid */
-static const uint8_t CMD_STXETX_OFF[]     = {0x08,0xC6,0x04,0x08,0x00,0xF2,0xB7,0x00,0xFD,0x7D};
-/* Decoded packet format → raw (not packet) */
-static const uint8_t CMD_PACKET_RAW[]     = {0x07,0xC6,0x04,0x08,0x00,0xEE,0x00,0xFE,0x39};
-/* Good-read prompt tone → On / Off. The same PARAM_SEND frames serve the boot
- * sequence (On) and the runtime toggle (gm67_set_beep, exported below). */
-static const uint8_t CMD_BEEP_ON[]        = {0x07,0xC6,0x04,0x08,0x00,0x38,0x01,0xFE,0xEE};
+/* Good-read prompt tone enable/disable */
 static const uint8_t CMD_BEEP_OFF[]       = {0x07,0xC6,0x04,0x08,0x00,0x38,0x00,0xFE,0xEF};
-/* Single scan time → 3s */
-static const uint8_t CMD_SCANTIME_3S[]    = {0x08,0xC6,0x04,0x08,0x00,0xF2,0xFA,0x03,0xFD,0x37};
+static const uint8_t CMD_BEEP_ON[]        = {0x07,0xC6,0x04,0x08,0x00,0x38,0x01,0xFE,0xEE};
+/* Good-read prompt volume (only meaningful when beep is on) */
+static const uint8_t CMD_BEEP_VOL_LOW[]   = {0x07,0xC6,0x04,0x08,0x00,0x8C,0x02,0xFE,0x99};
+static const uint8_t CMD_BEEP_VOL_MED[]   = {0x07,0xC6,0x04,0x08,0x00,0x8C,0x01,0xFE,0x9A};
+static const uint8_t CMD_BEEP_VOL_HIGH[]  = {0x07,0xC6,0x04,0x08,0x00,0x8C,0x00,0xFE,0x9B};
+/* Scanning illumination light */
+static const uint8_t CMD_LIGHT_ON_SCAN[]  = {0x08,0xC6,0x04,0x08,0x00,0xF2,0x02,0x00,0xFE,0x32};
+static const uint8_t CMD_LIGHT_OFF[]      = {0x08,0xC6,0x04,0x08,0x00,0xF2,0x02,0x02,0xFE,0x30};
+/* Collimation/aiming light */
+static const uint8_t CMD_COLLIM_ON_SCAN[] = {0x08,0xC6,0x04,0x08,0x00,0xF2,0x03,0x00,0xFE,0x31};
+static const uint8_t CMD_COLLIM_OFF[]     = {0x08,0xC6,0x04,0x08,0x00,0xF2,0x03,0x02,0xFE,0x2F};
 
 /* ---- Control commands (§3, Opcode Table) --------------------------------- *
  * These trigger immediate module actions rather than writing parameter memory.
@@ -30,35 +25,29 @@ static const uint8_t CMD_SCAN_ENABLE[]  = {0x04,0xE9,0x04,0x00,0xFF,0x0F};
 static const uint8_t CMD_SCAN_DISABLE[] = {0x04,0xEA,0x04,0x00,0xFF,0x0E};
 static const uint8_t CMD_START_DECODE[] = {0x04,0xE4,0x04,0x00,0xFF,0x14};
 static const uint8_t CMD_STOP_DECODE[]  = {0x04,0xE5,0x04,0x00,0xFF,0x13};
-static const uint8_t CMD_BEEP_CUE[]     = {0x05,0xE6,0x04,0x00,0x01,0xFF,0x10};
+static const uint8_t CMD_BEEP_CUE[]    = {0x05,0xE6,0x04,0x00,0x01,0xFF,0x10};
 static const uint8_t CMD_SLEEP[]        = {0x04,0xEB,0x04,0x00,0xFF,0x0D};
 
-#define CMD(arr, name) { (arr), (uint8_t)sizeof(arr), (name) }
+#define MKMD(arr, name) { (arr), (uint8_t)sizeof(arr), (name) }
 
-const gm67_cmd_t gm67_config_seq[] = {
-    CMD(CMD_IFACE_SERIAL,   "iface=serial"),
-    CMD(CMD_TRIGGER_CONT,   "trigger=continuous"),
-    CMD(CMD_SEND_CODE_ONLY, "send=code-only"),
-    CMD(CMD_TERM_CRLF,      "term=crlf"),
-    CMD(CMD_STXETX_OFF,     "stx/etx=off"),
-    CMD(CMD_PACKET_RAW,     "packet=raw"),
-    CMD(CMD_BEEP_ON,        "beep=on"),
-    CMD(CMD_SCANTIME_3S,    "scantime=3s"),
-};
-const size_t gm67_config_seq_len = sizeof(gm67_config_seq) / sizeof(gm67_config_seq[0]);
+/* Runtime scanner settings */
+const gm67_cmd_t gm67_cmd_beep_off      = MKMD(CMD_BEEP_OFF,      "beep=off");
+const gm67_cmd_t gm67_cmd_beep_on       = MKMD(CMD_BEEP_ON,       "beep=on");
+const gm67_cmd_t gm67_cmd_beep_vol_low  = MKMD(CMD_BEEP_VOL_LOW,  "beep-vol=low");
+const gm67_cmd_t gm67_cmd_beep_vol_med  = MKMD(CMD_BEEP_VOL_MED,  "beep-vol=med");
+const gm67_cmd_t gm67_cmd_beep_vol_high = MKMD(CMD_BEEP_VOL_HIGH, "beep-vol=high");
+const gm67_cmd_t gm67_cmd_light_on_scan = MKMD(CMD_LIGHT_ON_SCAN, "light=on-scan");
+const gm67_cmd_t gm67_cmd_light_off     = MKMD(CMD_LIGHT_OFF,     "light=off");
+const gm67_cmd_t gm67_cmd_collim_on_scan= MKMD(CMD_COLLIM_ON_SCAN,"collim=on-scan");
+const gm67_cmd_t gm67_cmd_collim_off    = MKMD(CMD_COLLIM_OFF,    "collim=off");
 
-/* Runtime good-read beep toggle (Phase 2). Reuses the byte arrays above, so the
- * checksums are asserted once by the host tests that cover the config seq. */
-const gm67_cmd_t gm67_cmd_beep_on  = CMD(CMD_BEEP_ON,  "beep=on");
-const gm67_cmd_t gm67_cmd_beep_off = CMD(CMD_BEEP_OFF, "beep=off");
-
-/* Immediate control commands (§3, Opcode Table). */
-const gm67_cmd_t gm67_cmd_scan_enable  = CMD(CMD_SCAN_ENABLE,  "scan-enable");
-const gm67_cmd_t gm67_cmd_scan_disable = CMD(CMD_SCAN_DISABLE, "scan-disable");
-const gm67_cmd_t gm67_cmd_start_decode = CMD(CMD_START_DECODE, "start-decode");
-const gm67_cmd_t gm67_cmd_stop_decode  = CMD(CMD_STOP_DECODE,  "stop-decode");
-const gm67_cmd_t gm67_cmd_beep_cue     = CMD(CMD_BEEP_CUE,     "beep-cue");
-const gm67_cmd_t gm67_cmd_sleep        = CMD(CMD_SLEEP,         "sleep");
+/* Immediate control commands */
+const gm67_cmd_t gm67_cmd_scan_enable  = MKMD(CMD_SCAN_ENABLE,  "scan-enable");
+const gm67_cmd_t gm67_cmd_scan_disable = MKMD(CMD_SCAN_DISABLE, "scan-disable");
+const gm67_cmd_t gm67_cmd_start_decode = MKMD(CMD_START_DECODE, "start-decode");
+const gm67_cmd_t gm67_cmd_stop_decode  = MKMD(CMD_STOP_DECODE,  "stop-decode");
+const gm67_cmd_t gm67_cmd_beep_cue     = MKMD(CMD_BEEP_CUE,     "beep-cue");
+const gm67_cmd_t gm67_cmd_sleep        = MKMD(CMD_SLEEP,        "sleep");
 
 /* ---- Reply frames -------------------------------------------------------- */
 

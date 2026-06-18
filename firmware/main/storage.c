@@ -45,10 +45,11 @@ static uint32_t load_u32(nvs_handle_t h, const char *key, uint32_t fallback)
 esp_err_t storage_load(app_config_t *cfg)
 {
     memset(cfg, 0, sizeof(*cfg));
-    /* Feedback toggles default on; a missing NVS key (first boot) keeps them on. */
     strlcpy(cfg->language, I18N_DEFAULT_LANGUAGE, sizeof(cfg->language));
-    cfg->beep_enabled = true;
+    cfg->beep_level = 2;    /* GM67_BEEP_MEDIUM */
     cfg->light_enabled = true;
+    cfg->scanner_light = 0; /* GM67_LIGHT_ON_SCAN */
+    cfg->collimation = 0;   /* GM67_COLLIM_ON_SCAN */
     cfg->screen_timeout_seconds = 60; /* default: sleep after 60 s idle */
     nvs_handle_t h;
     esp_err_t err = nvs_open(NS, NVS_READONLY, &h);
@@ -63,8 +64,10 @@ esp_err_t storage_load(app_config_t *cfg)
         load_str(h, "api_token", cfg->api_token, sizeof(cfg->api_token));
         load_str(h, "ap_pass", cfg->ap_pass, sizeof(cfg->ap_pass));
         load_str(h, "lang", cfg->language, sizeof(cfg->language));
-        cfg->beep_enabled = load_flag(h, "beep", true);
+        cfg->beep_level = (uint8_t)load_u32(h, "beep_lvl", 2);
         cfg->light_enabled = load_flag(h, "light", true);
+        cfg->scanner_light = (uint8_t)load_u32(h, "scan_lgt", 0);
+        cfg->collimation = (uint8_t)load_u32(h, "collim", 0);
         cfg->screen_timeout_seconds = load_u32(h, "scrn_to", 60);
         cfg->touch_cal_x_left = load_u32(h, "tcal_xl", 0);
         cfg->touch_cal_x_right = load_u32(h, "tcal_xr", 0);
@@ -120,8 +123,10 @@ esp_err_t storage_save_settings(const app_config_t *cfg)
 {
     nvs_handle_t h;
     ESP_RETURN_ON_ERROR(nvs_open(NS, NVS_READWRITE, &h), TAG, "open");
-    esp_err_t err = nvs_set_u8(h, "beep", cfg->beep_enabled ? 1 : 0);
+    esp_err_t err = nvs_set_u32(h, "beep_lvl", cfg->beep_level);
     if (err == ESP_OK) err = nvs_set_u8(h, "light", cfg->light_enabled ? 1 : 0);
+    if (err == ESP_OK) err = nvs_set_u32(h, "scan_lgt", cfg->scanner_light);
+    if (err == ESP_OK) err = nvs_set_u32(h, "collim", cfg->collimation);
     if (err == ESP_OK) err = nvs_set_str(h, "lang", cfg->language);
     if (err == ESP_OK) err = nvs_set_u32(h, "scrn_to", cfg->screen_timeout_seconds);
     if (err == ESP_OK) err = nvs_commit(h);

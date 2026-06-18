@@ -148,8 +148,9 @@ static void go_idle(void)
 
 static void show_settings(void)
 {
-    ui_show_settings(s_cfg.beep_enabled, s_cfg.light_enabled, s_cfg.language,
-                     s_cfg.screen_timeout_seconds);
+    ui_show_settings(s_cfg.beep_level, s_cfg.light_enabled, s_cfg.language,
+                     s_cfg.screen_timeout_seconds, s_cfg.scanner_light,
+                     s_cfg.collimation);
     enter_state(APP_SETTINGS, SCREEN_TIMEOUT_MS);
 }
 
@@ -325,11 +326,11 @@ static void handle_ui(const ui_event_t *evt)
     case UI_EVT_OPEN_SETTINGS:
         show_settings();
         break;
-    case UI_EVT_TOGGLE_BEEP:
-        s_cfg.beep_enabled = !s_cfg.beep_enabled;
+    case UI_EVT_CYCLE_BEEP:
+        s_cfg.beep_level = (s_cfg.beep_level + 1) % 4;
         storage_save_settings(&s_cfg);
-        gm67_set_beep(s_cfg.beep_enabled); /* best-effort runtime PARAM_SEND */
-        show_settings(); /* re-arm the idle fallback */
+        gm67_set_beep_level((gm67_beep_level_t)s_cfg.beep_level);
+        show_settings();
         break;
     case UI_EVT_TOGGLE_LIGHT:
         s_cfg.light_enabled = !s_cfg.light_enabled;
@@ -363,6 +364,18 @@ static void handle_ui(const ui_event_t *evt)
         show_settings();
         break;
     }
+    case UI_EVT_CYCLE_SCANNER_LIGHT:
+        s_cfg.scanner_light = (s_cfg.scanner_light + 1) % 2;
+        storage_save_settings(&s_cfg);
+        gm67_set_scanner_light((gm67_light_mode_t)s_cfg.scanner_light);
+        show_settings();
+        break;
+    case UI_EVT_CYCLE_COLLIMATION:
+        s_cfg.collimation = (s_cfg.collimation + 1) % 2;
+        storage_save_settings(&s_cfg);
+        gm67_set_collimation((gm67_collim_mode_t)s_cfg.collimation);
+        show_settings();
+        break;
     case UI_EVT_OPEN_TOUCH_CAL:
         if (s_state == APP_SETTINGS) {
             s_touch_cal_index = 0;
@@ -514,6 +527,10 @@ static void apply_stored_touch_calibration(void)
 
 void app_main(void)
 {
+    /* Enable GM67 debug logs (hex dumps for ACK diagnosis) without raising the
+     * global log level, which would flood the console with SPI-master noise. */
+    esp_log_level_set("gm67", ESP_LOG_DEBUG);
+
     ESP_ERROR_CHECK(storage_init());
 
     ESP_ERROR_CHECK(storage_load(&s_cfg));
@@ -607,10 +624,6 @@ void app_main(void)
 #endif
 
     ESP_ERROR_CHECK(gm67_init(on_scan, SCAN_DEBOUNCE_MS));
-    /* Boot config always enables the GM67 beep; honour a persisted "off". */
-    if (!s_cfg.beep_enabled) {
-        gm67_set_beep(false);
-    }
 
     /* Display up, WiFi attempted, scanner task running: this image works.
      * Without this an OTA-installed build rolls back on next reboot. */
