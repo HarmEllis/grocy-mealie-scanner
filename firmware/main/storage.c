@@ -69,6 +69,7 @@ esp_err_t storage_load(app_config_t *cfg)
         cfg->scanner_light = (uint8_t)load_u32(h, "scan_lgt", 0);
         cfg->collimation = (uint8_t)load_u32(h, "collim", 0);
         cfg->screen_timeout_seconds = load_u32(h, "scrn_to", 60);
+        cfg->api_insecure = load_flag(h, "api_insec", false);
         cfg->touch_cal_x_left = load_u32(h, "tcal_xl", 0);
         cfg->touch_cal_x_right = load_u32(h, "tcal_xr", 0);
         cfg->touch_cal_y_top = load_u32(h, "tcal_yt", 0);
@@ -109,6 +110,7 @@ esp_err_t storage_save(const app_config_t *cfg)
     if (err == ESP_OK) err = nvs_set_str(h, "api_token", cfg->api_token);
     if (err == ESP_OK) err = nvs_set_str(h, "ap_pass", cfg->ap_pass);
     if (err == ESP_OK) err = nvs_set_str(h, "lang", cfg->language);
+    if (err == ESP_OK) err = nvs_set_u8(h, "api_insec", cfg->api_insecure ? 1 : 0);
     if (err == ESP_OK) err = nvs_commit(h);
     nvs_close(h);
     if (err == ESP_OK) {
@@ -151,6 +153,83 @@ esp_err_t storage_save_touch_cal(const app_config_t *cfg)
         ESP_LOGE(TAG, "touch calibration save failed: %s", esp_err_to_name(err));
     }
     return err;
+}
+
+esp_err_t storage_save_api_ca(const char *pem)
+{
+    nvs_handle_t h;
+    ESP_RETURN_ON_ERROR(nvs_open(NS, NVS_READWRITE, &h), TAG, "open");
+    esp_err_t err;
+    if (pem == NULL || pem[0] == '\0') {
+        err = nvs_erase_key(h, "api_ca");
+        if (err == ESP_ERR_NVS_NOT_FOUND) {
+            err = ESP_OK; /* nothing stored; nothing to clear */
+        }
+    } else {
+        err = nvs_set_str(h, "api_ca", pem);
+    }
+    if (err == ESP_OK) err = nvs_commit(h);
+    nvs_close(h);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "api ca save failed: %s", esp_err_to_name(err));
+    }
+    return err;
+}
+
+esp_err_t storage_load_api_ca(char *buf, size_t cap, size_t *out_len)
+{
+    buf[0] = '\0';
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(NS, NVS_READONLY, &h);
+    if (err == ESP_ERR_NVS_NOT_FOUND) {
+        return ESP_OK; /* no namespace yet: treat as no cert */
+    }
+    ESP_RETURN_ON_ERROR(err, TAG, "open");
+    size_t len = cap;
+    err = nvs_get_str(h, "api_ca", buf, &len);
+    nvs_close(h);
+    if (err == ESP_ERR_NVS_NOT_FOUND) {
+        return ESP_OK; /* key absent: empty string */
+    }
+    if (err != ESP_OK) {
+        buf[0] = '\0';
+        return err;
+    }
+    if (out_len != NULL) {
+        *out_len = strlen(buf);
+    }
+    return ESP_OK;
+}
+
+void storage_request_setup(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NS, NVS_READWRITE, &h) != ESP_OK) {
+        return;
+    }
+    if (nvs_set_u8(h, "setup_req", 1) == ESP_OK) {
+        nvs_commit(h);
+    }
+    nvs_close(h);
+}
+
+bool storage_take_setup_request(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NS, NVS_READWRITE, &h) != ESP_OK) {
+        return false;
+    }
+    uint8_t v = 0;
+    bool requested = nvs_get_u8(h, "setup_req", &v) == ESP_OK && v != 0;
+    if (requested) {
+        nvs_erase_key(h, "setup_req");
+        nvs_commit(h);
+    }
+    nvs_close(h);
+    return requested;
 }
 
 esp_err_t storage_erase(void)

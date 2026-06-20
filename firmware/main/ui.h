@@ -29,6 +29,7 @@ typedef enum {
     UI_EVT_WAKE,             /* user touched the sleep overlay — device should wake */
     UI_EVT_OTA_ACCEPT,       /* "Update" tapped on the OTA-available screen */
     UI_EVT_OTA_SKIP,         /* "Later" tapped on the OTA-available screen */
+    UI_EVT_OPEN_SETUP,       /* "WiFi & API setup" tapped (settings / conn-error) */
 } ui_event_type_t;
 
 typedef struct {
@@ -58,6 +59,10 @@ void ui_show_proposal(const char *initial_name);
 void ui_show_search(void);
 void ui_show_search_results(const api_search_result_t *results);
 void ui_show_error(const char *message);
+/* Like ui_show_error but for a not-yet-connected state: the hint reads "tap to
+ * retry" and a "WiFi & API setup" affordance is shown. A tap still emits
+ * UI_EVT_DISMISS; the app task retries the connection instead of going idle. */
+void ui_show_connection_error(const char *message);
 void ui_show_settings(uint8_t beep_level, bool light, const char *language,
                       uint32_t timeout_seconds, uint8_t scanner_light,
                       uint8_t collimation);

@@ -16,6 +16,13 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 # github.com / objects.githubusercontent.com without shipping a per-host PEM.
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
 
+# Allow the API client's optional "trust any certificate" mode (settings/portal).
+# With no CA configured, esp-tls then sets MBEDTLS_SSL_VERIFY_NONE instead of
+# failing the handshake. API only: OTA always attaches the strict bundle above,
+# so it keeps verifying regardless of this option.
+CONFIG_ESP_TLS_INSECURE=y
+CONFIG_ESP_TLS_SKIP_SERVER_CERT_VERIFY=y
+
 # OTA update authenticity without burning eFuses. Apps are signed with an
 # RSA-3072 Secure Boot V2 signature block, and OTA updates are verified against
 # the public-key digest from the currently running signed app. This protects

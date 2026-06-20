@@ -42,6 +42,7 @@ static const char *TAG = "main";
 #define WIFI_TIMEOUT_MS       20000
 #define FLASH_DWELL_MS        2200   /* matches the design's auto-reset */
 #define SCREEN_TIMEOUT_MS     45000  /* any non-idle screen falls back to idle */
+#define CONN_RETRY_MS         5000   /* connection-error screen auto-retry cadence */
 #define FACTORY_RESET_HOLD_MS 5000
 #define TOUCH_CAL_RESULT_MS   1500
 
@@ -68,6 +69,7 @@ typedef enum {
     APP_PROPOSAL,   /* create-product proposal, s_scan valid */
     APP_SEARCH,     /* product search, s_scan valid */
     APP_ERROR,      /* error screen, tap dismisses */
+    APP_CONN_ERROR, /* not connected to the API; tap/timer retries, never idles */
     APP_SETTINGS,   /* on-device settings (feedback and language) */
     APP_TOUCH_CAL,  /* four-point touch calibration or its result message */
     APP_SLEEP,      /* display sleeping; only UI_EVT_WAKE transitions out */
@@ -184,6 +186,34 @@ static void show_error(const char *message)
     enter_state(APP_ERROR, SCREEN_TIMEOUT_MS);
 }
 
+static void show_connection_error(const char *message)
+{
+    status_led_flash(STATUS_LED_CORAL);
+    ui_show_connection_error(message);
+    /* Re-arm the screen timer as an auto-retry tick rather than a fall-to-idle. */
+    enter_state(APP_CONN_ERROR, CONN_RETRY_MS);
+}
+
+/* Gate to the idle screen: only reach idle once WiFi is up and the API answers.
+ * Re-run on boot, on a tap, and on the auto-retry tick so the user never sees a
+ * fake "connected" idle screen. api_ping() blocks up to HTTP_TIMEOUT_MS, so show
+ * a spinner first (the LVGL task keeps drawing while this app task blocks). */
+static void try_connect(void)
+{
+    char err[API_ERR_LEN];
+    if (!wifi_conn_is_connected()) {
+        strlcpy(err, tr("wifi_disconnected"), sizeof(err));
+        show_connection_error(err);
+        return;
+    }
+    ui_show_connecting(tr("reconnecting"));
+    if (api_ping(err) == ESP_OK) {
+        go_idle();
+    } else {
+        show_connection_error(err);
+    }
+}
+
 static void show_product(const api_product_t *product)
 {
     status_led_flash(STATUS_LED_GREEN);
@@ -249,7 +279,7 @@ static void handle_scan(const char *barcode)
      * losing typed input to an accidental re-scan would be worse. */
     if (s_state == APP_PROPOSAL || s_state == APP_SEARCH ||
         s_state == APP_TOUCH_CAL || s_state == APP_OTA_PROMPT ||
-        s_state == APP_OTA_PROGRESS) {
+        s_state == APP_OTA_PROGRESS || s_state == APP_CONN_ERROR) {
         return;
     }
 
@@ -508,9 +538,21 @@ static void handle_ui(const ui_event_t *evt)
             display_touch_capture(false);
             s_touch_cal_result_visible = false;
             show_settings();
+        } else if (s_state == APP_CONN_ERROR) {
+            try_connect(); /* tap = retry now; stays on error if still down */
         } else {
             go_idle();
         }
+        break;
+    case UI_EVT_OPEN_SETUP:
+#if !CONFIG_GMS_DEMO_MODE
+        /* Re-enter the provisioning portal after a reboot, keeping the rest of
+         * the config (touch cal, etc.). The portal pre-fills current values. */
+        ui_show_connecting(tr("opening_setup"));
+        storage_request_setup();
+        vTaskDelay(pdMS_TO_TICKS(600)); /* let the message render */
+        esp_restart();
+#endif
         break;
     case UI_EVT_OTA_ACCEPT:
 #if !CONFIG_GMS_DEMO_MODE
@@ -543,10 +585,10 @@ static void status_tick(void *arg)
 #endif
 }
 
-/* BOOT button. Long-press (5 s) = factory reset on every build. In a demo
- * build a short press (released before the 5 s threshold) injects the next
- * scenario barcode, so the whole flow can be shown without the GM67 or a
- * printed code. Polling at 100 ms is plenty. */
+/* BOOT button. Long-press (5 s) = factory reset on every build. A short press
+ * (released before the 5 s threshold) re-enters the setup portal in a normal
+ * build (to change WiFi/API without wiping everything), or injects the next
+ * scenario barcode in a demo build. Polling at 100 ms is plenty. */
 static void reset_button_task(void *arg)
 {
     (void)arg;
@@ -560,11 +602,15 @@ static void reset_button_task(void *arg)
                 esp_restart();
             }
         } else {
-#if CONFIG_GMS_DEMO_MODE
             if (held_ms > 0 && held_ms < FACTORY_RESET_HOLD_MS) {
+#if CONFIG_GMS_DEMO_MODE
                 on_scan(demo_next_barcode());
-            }
+#else
+                ESP_LOGI(TAG, "BOOT short press: entering setup");
+                storage_request_setup();
+                esp_restart();
 #endif
+            }
             held_ms = 0;
         }
         vTaskDelay(pdMS_TO_TICKS(100));
@@ -683,7 +729,11 @@ void app_main(void)
     setenv("TZ", "CET-1CEST,M3.5.0,M10.5.0/3", 1);
     tzset();
 #else
-    if (!storage_is_provisioned(&s_cfg)) {
+    /* Enter the portal when unprovisioned, or when the user asked to reconfigure
+     * (settings row / short BOOT press set a flag and rebooted). Consume the flag
+     * here so a power-cycle out of the portal returns to normal operation. */
+    bool setup_requested = storage_take_setup_request();
+    if (!storage_is_provisioned(&s_cfg) || setup_requested) {
         char ap_ssid[16];
         ui_show_connecting(tr("starting_setup"));
         ESP_ERROR_CHECK(wifi_prov_run(&s_cfg, ap_ssid, sizeof(ap_ssid)));
@@ -722,13 +772,10 @@ void app_main(void)
 #if CONFIG_GMS_DEMO_MODE
     go_idle();
 #else
-    char err[API_ERR_LEN];
-    if (wifi_conn_is_connected() && api_ping(err) != ESP_OK) {
-        ESP_LOGW(TAG, "api ping failed: %s", err);
-        show_error(err);
-    } else {
-        go_idle();
-    }
+    /* Gate the idle screen on a real connection: if WiFi or the API is down we
+     * stay on a sticky connection-error screen that retries, rather than showing
+     * a misleading "connected" idle screen. */
+    try_connect();
 #endif
 
     ESP_ERROR_CHECK(gm67_init(on_scan, SCAN_DEBOUNCE_MS));
@@ -780,6 +827,8 @@ void app_main(void)
                     display_touch_capture(false);
                     s_touch_cal_result_visible = false;
                     show_settings();
+                } else if (s_state == APP_CONN_ERROR) {
+                    try_connect(); /* auto-retry tick: advances to idle once online */
                 } else {
                     go_idle();
                 }
