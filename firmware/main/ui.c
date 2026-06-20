@@ -59,6 +59,10 @@ static lv_obj_t *s_sleep_overlay = NULL;
 static char s_pending_barcode[API_BARCODE_LEN];
 static lv_obj_t *s_search_results_box;
 static lv_obj_t *s_touch_cal_target;
+/* OTA progress widgets, kept so ui_show_ota_progress can update the live bar
+ * without rebuilding the screen on every percent tick. */
+static lv_obj_t *s_ota_bar;
+static lv_obj_t *s_ota_pct_label;
 
 static bool emit(ui_event_type_t type, api_action_t action, int product_id,
                  const char *text)
@@ -226,6 +230,8 @@ static lv_obj_t *screen_reset(const char *status_text, lv_color_t dot_color,
     s_status_clock = NULL;
     s_search_results_box = NULL;
     s_touch_cal_target = NULL;
+    s_ota_bar = NULL;
+    s_ota_pct_label = NULL;
     s_status_shows_conn = false; /* only ui_show_idle re-enables this */
 
     lv_obj_set_style_bg_color(s_screen, COL_DEVICE, 0);
@@ -1465,6 +1471,121 @@ void ui_show_touch_calibration_result(bool success, bool save_failed)
     lv_label_set_long_mode(message, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_align(message, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(message, LV_ALIGN_CENTER, 0, 42);
+    lvgl_port_unlock();
+}
+
+/* ------------------------------------------------------------------ */
+/* OTA update                                                          */
+/* ------------------------------------------------------------------ */
+
+static void ota_accept_cb(lv_event_t *e)
+{
+    (void)e;
+    emit(UI_EVT_OTA_ACCEPT, 0, 0, NULL);
+}
+
+static void ota_skip_cb(lv_event_t *e)
+{
+    (void)e;
+    emit(UI_EVT_OTA_SKIP, 0, 0, NULL);
+}
+
+void ui_show_ota_available(const char *new_version, const char *current_version)
+{
+    lvgl_port_lock(0);
+    lv_obj_t *content = screen_reset(tr("ota_available"), COL_BLUE, true);
+    lv_obj_set_style_pad_hor(content, 14, 0);
+
+    lv_obj_t *circle = lv_obj_create(content);
+    lv_obj_remove_style_all(circle);
+    lv_obj_set_size(circle, 54, 54);
+    lv_obj_align(circle, LV_ALIGN_TOP_MID, 0, 12);
+    lv_obj_set_style_radius(circle, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(circle, COL_BLUE, 0);
+    lv_obj_set_style_bg_opa(circle, 36, 0);
+    lv_obj_set_style_border_color(circle, COL_BLUE, 0);
+    lv_obj_set_style_border_width(circle, 1, 0);
+    lv_obj_set_style_border_opa(circle, 97, 0);
+
+    lv_obj_t *icon = lv_label_create(circle);
+    lv_label_set_text(icon, LV_SYMBOL_DOWNLOAD);
+    lv_obj_set_style_text_font(icon, &gms_font_22, 0);
+    lv_obj_set_style_text_color(icon, COL_BLUE, 0);
+    lv_obj_center(icon);
+
+    lv_obj_t *title = lv_label_create(content);
+    lv_label_set_text(title, tr("ota_available"));
+    lv_obj_set_style_text_font(title, &gms_font_18, 0);
+    lv_obj_set_style_text_color(title, COL_TEXT, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 76);
+
+    char buf[48];
+    lv_obj_t *new_label = lv_label_create(content);
+    snprintf(buf, sizeof(buf), tr("ota_new_version_fmt"), new_version);
+    lv_label_set_text(new_label, buf);
+    lv_obj_set_style_text_font(new_label, &gms_font_14, 0);
+    lv_obj_set_style_text_color(new_label, COL_GREEN, 0);
+    lv_obj_align(new_label, LV_ALIGN_TOP_MID, 0, 110);
+
+    lv_obj_t *cur_label = lv_label_create(content);
+    snprintf(buf, sizeof(buf), tr("ota_current_version_fmt"), current_version);
+    lv_label_set_text(cur_label, buf);
+    lv_obj_set_style_text_font(cur_label, &gms_font_12, 0);
+    lv_obj_set_style_text_color(cur_label, COL_DIM, 0);
+    lv_obj_align(cur_label, LV_ALIGN_TOP_MID, 0, 134);
+
+    lv_obj_t *update_btn = make_button(content, tr("ota_update_now"), true,
+                                       ota_accept_cb, NULL);
+    lv_obj_align(update_btn, LV_ALIGN_TOP_MID, 0, 178);
+
+    lv_obj_t *later_btn = make_button(content, tr("ota_later"), false,
+                                      ota_skip_cb, NULL);
+    lv_obj_align(later_btn, LV_ALIGN_TOP_MID, 0, 227);
+    lvgl_port_unlock();
+}
+
+void ui_show_ota_progress(int percent)
+{
+    if (percent < 0) {
+        percent = 0;
+    } else if (percent > 100) {
+        percent = 100;
+    }
+
+    lvgl_port_lock(0);
+    /* On every call after the first, just move the bar — rebuilding the whole
+     * screen per percent would flicker and is needless work. */
+    if (s_ota_bar != NULL && s_ota_pct_label != NULL) {
+        lv_bar_set_value(s_ota_bar, percent, LV_ANIM_OFF);
+        lv_label_set_text_fmt(s_ota_pct_label, "%d%%", percent);
+        lvgl_port_unlock();
+        return;
+    }
+
+    lv_obj_t *content = screen_reset(tr("ota_installing"), COL_AMBER, true);
+
+    lv_obj_t *title = lv_label_create(content);
+    lv_label_set_text(title, tr("ota_installing"));
+    lv_obj_set_style_text_font(title, &gms_font_18, 0);
+    lv_obj_set_style_text_color(title, COL_TEXT, 0);
+    lv_obj_align(title, LV_ALIGN_CENTER, 0, -40);
+
+    s_ota_bar = lv_bar_create(content);
+    lv_obj_set_size(s_ota_bar, 200, 10);
+    lv_obj_align(s_ota_bar, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_radius(s_ota_bar, 5, 0);
+    lv_obj_set_style_bg_color(s_ota_bar, COL_CARD, 0);
+    lv_obj_set_style_bg_opa(s_ota_bar, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(s_ota_bar, 5, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(s_ota_bar, COL_AMBER, LV_PART_INDICATOR);
+    lv_bar_set_range(s_ota_bar, 0, 100);
+    lv_bar_set_value(s_ota_bar, percent, LV_ANIM_OFF);
+
+    s_ota_pct_label = lv_label_create(content);
+    lv_label_set_text_fmt(s_ota_pct_label, "%d%%", percent);
+    lv_obj_set_style_text_font(s_ota_pct_label, &gms_font_14, 0);
+    lv_obj_set_style_text_color(s_ota_pct_label, COL_DIM, 0);
+    lv_obj_align(s_ota_pct_label, LV_ALIGN_CENTER, 0, 28);
     lvgl_port_unlock();
 }
 

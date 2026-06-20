@@ -27,6 +27,8 @@ typedef enum {
     UI_EVT_CAL_RELEASE,      /* calibration overlay released; arm next sample */
     UI_EVT_SLEEP,            /* touch inactivity exceeded the configured timeout */
     UI_EVT_WAKE,             /* user touched the sleep overlay — device should wake */
+    UI_EVT_OTA_ACCEPT,       /* "Update" tapped on the OTA-available screen */
+    UI_EVT_OTA_SKIP,         /* "Later" tapped on the OTA-available screen */
 } ui_event_type_t;
 
 typedef struct {
@@ -62,6 +64,14 @@ void ui_show_settings(uint8_t beep_level, bool light, const char *language,
 void ui_show_touch_calibration(void);
 void ui_touch_calibration_set_target(uint8_t target_index);
 void ui_show_touch_calibration_result(bool success, bool save_failed);
+
+/* OTA: prompt the user that a newer firmware is available (versions are
+ * human-readable, no "v" prefix), and a download/install progress screen.
+ * ui_show_ota_progress() rebuilds the screen on the first call (percent
+ * ignored for layout) and only updates the bar + label on later calls, so it
+ * is cheap to call from the download progress callback. */
+void ui_show_ota_available(const char *new_version, const char *current_version);
+void ui_show_ota_progress(int percent);
 
 /* Update the idle inactivity threshold used by the screen-sleep timer.
  * 0 = sleep disabled.  Safe to call from any task (no LVGL lock required). */

@@ -102,7 +102,15 @@
     X("create_failed", "Create failed", "Aanmaken mislukt") \
     X("link_failed", "Link failed", "Koppelen mislukt") \
     X("demo_unknown_product", "Demo: unknown product", "Demo: onbekend product") \
-    X("demo_catalogue_full", "Demo: catalogue full", "Demo: catalogus is vol")
+    X("demo_catalogue_full", "Demo: catalogue full", "Demo: catalogus is vol") \
+    X("ota_available", "Update available", "Update beschikbaar") \
+    X("ota_new_version_fmt", "New  %s", "Nieuw  %s") \
+    X("ota_current_version_fmt", "Current  %s", "Huidig  %s") \
+    X("ota_update_now", "Update", "Bijwerken") \
+    X("ota_later", "Later", "Later") \
+    X("ota_installing", "Installing update", "Update installeren") \
+    X("ota_restarting", "Restarting...", "Herstarten...") \
+    X("ota_failed", "Update failed", "Update mislukt")
 
 static const char *const s_languages[] = { "en", "nl", NULL };
 

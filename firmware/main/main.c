@@ -8,6 +8,9 @@
 #include "display.h"
 #include "gm67.h"
 #include "i18n.h"
+#if !CONFIG_GMS_DEMO_MODE
+#include "ota_update.h"
+#endif
 #include "status_led.h"
 #include "storage.h"
 #include "touch_calibration.h"
@@ -46,6 +49,7 @@ typedef enum {
     APP_EVT_SCAN,
     APP_EVT_UI,
     APP_EVT_TIMEOUT,
+    APP_EVT_OTA_CHECK,  /* boot/periodic timer asks for a GitHub release check */
 } app_event_kind_t;
 
 typedef struct {
@@ -67,6 +71,8 @@ typedef enum {
     APP_SETTINGS,   /* on-device settings (feedback and language) */
     APP_TOUCH_CAL,  /* four-point touch calibration or its result message */
     APP_SLEEP,      /* display sleeping; only UI_EVT_WAKE transitions out */
+    APP_OTA_PROMPT, /* update-available prompt; accept/skip or times out */
+    APP_OTA_PROGRESS, /* download/install in progress (app task blocks here) */
 } app_state_t;
 
 static QueueHandle_t s_queue;
@@ -89,6 +95,12 @@ static bool s_touch_cal_result_visible;
 /* Set true while the display is sleeping; on_scan checks this to drop codes
  * while the screen is off.  Written by the app task, read by the GM67 task. */
 static _Atomic bool s_display_asleep = false;
+
+#if !CONFIG_GMS_DEMO_MODE
+/* Result of the most recent GitHub release check; the tag is reused when the
+ * user accepts the update.  App task only. */
+static ota_check_result_t s_ota_result;
+#endif
 
 /* ------------------------------------------------------------------ */
 /* Producers (other tasks)                                             */
@@ -120,6 +132,17 @@ static void on_timeout(void *arg)
     app_event_t evt = { .kind = APP_EVT_TIMEOUT };
     xQueueSend(s_queue, &evt, 0);
 }
+
+#if !CONFIG_GMS_DEMO_MODE
+/* Boot + periodic OTA timers post here; the check itself runs in the app task
+ * (handle_ota_check) so it never races the state machine or blocks a timer. */
+static void on_ota_check_timer(void *arg)
+{
+    (void)arg;
+    app_event_t evt = { .kind = APP_EVT_OTA_CHECK };
+    xQueueSend(s_queue, &evt, 0);
+}
+#endif
 
 /* ------------------------------------------------------------------ */
 /* State transitions                                                   */
@@ -170,6 +193,52 @@ static void show_product(const api_product_t *product)
     enter_state(APP_PRODUCT, SCREEN_TIMEOUT_MS);
 }
 
+#if !CONFIG_GMS_DEMO_MODE
+/* Runs in the app task while ota_perform_update blocks; just forwards the
+ * download percentage to the progress screen (which updates in place). */
+static void ota_progress_cb(int percent)
+{
+    ui_show_ota_progress(percent);
+}
+
+/* Query GitHub for a newer release.  Only surfaces the prompt when idle and
+ * online; any error (network, clock-not-synced, parse) is silent and retried
+ * on the next periodic tick. */
+static void handle_ota_check(void)
+{
+    if (s_state != APP_IDLE || !wifi_conn_is_connected()) {
+        return;
+    }
+    if (ota_check_for_update(&s_ota_result) != ESP_OK || !s_ota_result.available) {
+        return;
+    }
+    ESP_LOGI(TAG, "OTA available: %s -> %s", s_ota_result.current_version,
+             s_ota_result.new_version);
+    ui_show_ota_available(s_ota_result.new_version, s_ota_result.current_version);
+    /* Give the user a generous window before falling back to idle. */
+    enter_state(APP_OTA_PROMPT, 2 * SCREEN_TIMEOUT_MS);
+}
+
+/* User accepted: download + install on the inactive slot, then reboot into it.
+ * Blocks the app task for the duration; the progress screen is driven by the
+ * callback.  On failure the running image is untouched. */
+static void handle_ota_accept(void)
+{
+    ui_show_ota_progress(0);
+    enter_state(APP_OTA_PROGRESS, 0); /* no timeout: the download owns the task */
+
+    esp_err_t err = ota_perform_update(s_ota_result.tag, ota_progress_cb);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "OTA update failed: %s", esp_err_to_name(err));
+        show_error(tr("ota_failed"));
+        return;
+    }
+    ui_show_connecting(tr("ota_restarting"));
+    vTaskDelay(pdMS_TO_TICKS(800)); /* let the message render before reboot */
+    esp_restart();
+}
+#endif
+
 /* ------------------------------------------------------------------ */
 /* Event handlers (app task)                                           */
 /* ------------------------------------------------------------------ */
@@ -179,7 +248,8 @@ static void handle_scan(const char *barcode)
     /* A fresh scan takes over from any screen except an open keyboard:
      * losing typed input to an accidental re-scan would be worse. */
     if (s_state == APP_PROPOSAL || s_state == APP_SEARCH ||
-        s_state == APP_TOUCH_CAL) {
+        s_state == APP_TOUCH_CAL || s_state == APP_OTA_PROMPT ||
+        s_state == APP_OTA_PROGRESS) {
         return;
     }
 
@@ -442,6 +512,20 @@ static void handle_ui(const ui_event_t *evt)
             go_idle();
         }
         break;
+    case UI_EVT_OTA_ACCEPT:
+#if !CONFIG_GMS_DEMO_MODE
+        if (s_state == APP_OTA_PROMPT) {
+            handle_ota_accept();
+        }
+#endif
+        break;
+    case UI_EVT_OTA_SKIP:
+#if !CONFIG_GMS_DEMO_MODE
+        if (s_state == APP_OTA_PROMPT) {
+            go_idle();
+        }
+#endif
+        break;
     }
 }
 
@@ -488,6 +572,26 @@ static void reset_button_task(void *arg)
 }
 
 #if !CONFIG_GMS_DEMO_MODE
+/* SNTP first-sync notification: fires the boot OTA check the instant the clock
+ * becomes valid. Reaching this callback guarantees WiFi is up (SNTP only gets a
+ * reply over a working link) and that time(NULL) is now real, so the TLS
+ * handshake to GitHub sees a valid certificate window — more robust than a
+ * fixed boot delay that a slow DNS/NTP response could outlast. Runs in the SNTP
+ * task; only the first sync triggers a check (SNTP re-syncs roughly hourly and
+ * the periodic timer, not this, owns the ongoing cadence). */
+static void on_time_synced(struct timeval *tv)
+{
+    (void)tv;
+    static atomic_bool s_boot_check_fired = false;
+    if (atomic_exchange(&s_boot_check_fired, true)) {
+        return;
+    }
+    if (s_queue != NULL) {
+        app_event_t evt = { .kind = APP_EVT_OTA_CHECK };
+        xQueueSend(s_queue, &evt, 0);
+    }
+}
+
 static void start_sntp(void)
 {
     /* Status-bar clock. Europe/Amsterdam with DST rules. */
@@ -495,6 +599,7 @@ static void start_sntp(void)
     tzset();
     esp_sntp_config_t cfg = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
     cfg.start = true;
+    cfg.sync_cb = on_time_synced; /* kicks the boot OTA check once time lands */
     esp_netif_sntp_init(&cfg);
 }
 #endif
@@ -561,6 +666,12 @@ void app_main(void)
     gpio_config(&boot_cfg);
     xTaskCreate(reset_button_task, "reset_btn", 2048, NULL, 2, NULL);
 
+    /* Create the event queue before WiFi/SNTP start: the SNTP time-sync
+     * callback (start_sntp) posts APP_EVT_OTA_CHECK here the moment the clock
+     * is set, which can land before the rest of app_main finishes. */
+    s_queue = xQueueCreate(8, sizeof(app_event_t));
+    configASSERT(s_queue != NULL);
+
 #if CONFIG_GMS_DEMO_MODE
     /* Demo image: no provisioning, no WiFi, no API ping. Show the bar as
      * connected and seed a plausible wall clock so the idle screen looks
@@ -594,9 +705,6 @@ void app_main(void)
 
     api_client_init(&s_cfg);
 
-    s_queue = xQueueCreate(8, sizeof(app_event_t));
-    configASSERT(s_queue != NULL);
-
     const esp_timer_create_args_t timeout_args = {
         .callback = on_timeout,
         .name = "screen_to",
@@ -629,6 +737,23 @@ void app_main(void)
      * Without this an OTA-installed build rolls back on next reboot. */
     esp_ota_mark_app_valid_cancel_rollback();
 
+#if !CONFIG_GMS_DEMO_MODE
+    /* OTA update checks. The boot check is driven by the SNTP time-sync
+     * callback (on_time_synced) rather than a fixed delay, so it only runs once
+     * WiFi is up and the clock is valid — exactly what the TLS handshake to
+     * GitHub needs. This periodic timer then polls every
+     * CONFIG_GMS_OTA_CHECK_INTERVAL_HOURS hours thereafter. */
+    const esp_timer_create_args_t ota_periodic_args = {
+        .callback = on_ota_check_timer,
+        .name = "ota_periodic",
+    };
+    esp_timer_handle_t ota_periodic_timer;
+    ESP_ERROR_CHECK(esp_timer_create(&ota_periodic_args, &ota_periodic_timer));
+    ESP_ERROR_CHECK(esp_timer_start_periodic(
+        ota_periodic_timer,
+        (uint64_t)CONFIG_GMS_OTA_CHECK_INTERVAL_HOURS * 3600ULL * 1000000ULL));
+#endif
+
     app_event_t evt;
     while (true) {
         if (xQueueReceive(s_queue, &evt, portMAX_DELAY) != pdTRUE) {
@@ -659,6 +784,11 @@ void app_main(void)
                     go_idle();
                 }
             }
+            break;
+        case APP_EVT_OTA_CHECK:
+#if !CONFIG_GMS_DEMO_MODE
+            handle_ota_check();
+#endif
             break;
         }
     }
