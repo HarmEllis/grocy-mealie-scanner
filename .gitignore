@@ -6,6 +6,12 @@ dist/
 .env
 *.log
 
+# Firmware signing keys. Keep private keys out of git; store the release key
+# in a secret manager and in the ESP_SECURE_BOOT_SIGNING_KEY_B64 GitHub secret.
+*.pem
+*.key
+firmware/secure_boot_signing_key.pem
+
 # ESP-IDF build artifacts
 firmware/build/
 firmware/build_*/

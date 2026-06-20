@@ -16,6 +16,16 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 # github.com / objects.githubusercontent.com without shipping a per-host PEM.
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
 
+# OTA update authenticity without burning eFuses. Apps are signed with an
+# RSA-3072 Secure Boot V2 signature block, and OTA updates are verified against
+# the public-key digest from the currently running signed app. This protects
+# against remote spoofed updates, but not physical reflashing.
+CONFIG_SECURE_SIGNED_APPS_NO_SECURE_BOOT=y
+CONFIG_SECURE_SIGNED_ON_UPDATE_NO_SECURE_BOOT=y
+CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES=y
+CONFIG_SECURE_BOOT_SIGNING_KEY="secure_boot_signing_key.pem"
+# CONFIG_SECURE_BOOT is not set
+
 # Mark a newly OTA-installed image as PENDING_VERIFY at boot; firmware calls
 # esp_ota_mark_app_valid_cancel_rollback() once a scan→render cycle succeeds.
 CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y

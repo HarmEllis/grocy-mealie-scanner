@@ -11,6 +11,16 @@ permissions:
   contents: read
 
 jobs:
+  unit-tests:
+    name: firmware / host unit tests
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Run GM67 host tests
+        run: bash firmware/test/run.sh
+
   # OTA-breaking firmware changes (binary > 3 MB OTA slot, partition-table
   # CSV regressed) are only catchable by an actual firmware build. Pre-merge
   # guardrail so the release pipeline never finds out about it at tag time.
@@ -28,10 +38,17 @@ jobs:
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Cache ESP-IDF managed components
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: firmware/managed_components
           key: managed-components-${{ hashFiles('firmware/dependencies.lock') }}
+
+      - name: Prepare throwaway signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          . "$IDF_PATH/export.sh"
+          ./scripts/prepare-signing-key.sh --generate-if-missing
 
       - name: Build firmware (esp32s3)
         shell: bash

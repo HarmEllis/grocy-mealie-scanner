@@ -215,6 +215,7 @@ green check means the release is buildable.
 - Device API contract: [`docs/DEVICE-API.md`](docs/DEVICE-API.md)
 - Firmware board and bring-up notes: [`firmware/BOARD_NOTES.md`](firmware/BOARD_NOTES.md)
 - GM67 improvement plan: [`docs/GM67-IMPROVEMENT-PLAN.md`](docs/GM67-IMPROVEMENT-PLAN.md)
+- OTA signing setup: [`docs/OTA-SIGNING.md`](docs/OTA-SIGNING.md)
 - Release history: [`CHANGELOG.md`](CHANGELOG.md)
 
 ## License

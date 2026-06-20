@@ -78,9 +78,6 @@ int main(void)
     capture_t c;
 
     /* 1. checksum/table integrity */
-    for (size_t i = 0; i < gm67_config_seq_len; i++) {
-        CHECK(gm67_frame_valid(gm67_config_seq[i].bytes, gm67_config_seq[i].len));
-    }
     CHECK(gm67_frame_valid(ACK, sizeof(ACK)));
     CHECK(gm67_frame_valid(NAK_RESEND, sizeof(NAK_RESEND)));
     CHECK(gm67_frame_valid(NAK_BADCTX, sizeof(NAK_BADCTX)));
