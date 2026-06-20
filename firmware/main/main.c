@@ -10,6 +10,7 @@
 #include "i18n.h"
 #include "status_led.h"
 #include "storage.h"
+#include "touch_calibration.h"
 #include "ui.h"
 #include "ui_fonts.h"
 #include "wifi_conn.h"
@@ -39,6 +40,7 @@ static const char *TAG = "main";
 #define FLASH_DWELL_MS        2200   /* matches the design's auto-reset */
 #define SCREEN_TIMEOUT_MS     45000  /* any non-idle screen falls back to idle */
 #define FACTORY_RESET_HOLD_MS 5000
+#define TOUCH_CAL_RESULT_MS   1500
 
 typedef enum {
     APP_EVT_SCAN,
@@ -63,6 +65,7 @@ typedef enum {
     APP_SEARCH,     /* product search, s_scan valid */
     APP_ERROR,      /* error screen, tap dismisses */
     APP_SETTINGS,   /* on-device settings (feedback and language) */
+    APP_TOUCH_CAL,  /* four-point touch calibration or its result message */
     APP_SLEEP,      /* display sleeping; only UI_EVT_WAKE transitions out */
 } app_state_t;
 
@@ -80,6 +83,9 @@ static api_scan_result_t s_scan;
 /* Loaded once at boot; the settings screen mutates feedback and language and
  * persists them, so it lives at file scope rather than on app_main's stack. */
 static app_config_t s_cfg;
+static touch_cal_sample_t s_touch_cal_samples[TOUCH_CAL_TARGET_COUNT];
+static uint8_t s_touch_cal_index;
+static bool s_touch_cal_result_visible;
 /* Set true while the display is sleeping; on_scan checks this to drop codes
  * while the screen is off.  Written by the app task, read by the GM67 task. */
 static _Atomic bool s_display_asleep = false;
@@ -140,6 +146,13 @@ static void go_idle(void)
     enter_state(APP_IDLE, 0);
 }
 
+static void show_settings(void)
+{
+    ui_show_settings(s_cfg.beep_enabled, s_cfg.light_enabled, s_cfg.language,
+                     s_cfg.screen_timeout_seconds);
+    enter_state(APP_SETTINGS, SCREEN_TIMEOUT_MS);
+}
+
 static void show_error(const char *message)
 {
     status_led_flash(STATUS_LED_CORAL);
@@ -164,7 +177,8 @@ static void handle_scan(const char *barcode)
 {
     /* A fresh scan takes over from any screen except an open keyboard:
      * losing typed input to an accidental re-scan would be worse. */
-    if (s_state == APP_PROPOSAL || s_state == APP_SEARCH) {
+    if (s_state == APP_PROPOSAL || s_state == APP_SEARCH ||
+        s_state == APP_TOUCH_CAL) {
         return;
     }
 
@@ -246,6 +260,40 @@ static void handle_search_query(const char *query)
     enter_state(APP_SEARCH, SCREEN_TIMEOUT_MS);
 }
 
+static void finish_touch_calibration(void)
+{
+    int32_t x_left = (s_touch_cal_samples[0].x + s_touch_cal_samples[2].x) / 2;
+    int32_t x_right = (s_touch_cal_samples[1].x + s_touch_cal_samples[3].x) / 2;
+    int32_t y_top = (s_touch_cal_samples[0].y + s_touch_cal_samples[1].y) / 2;
+    int32_t y_bottom = (s_touch_cal_samples[2].y + s_touch_cal_samples[3].y) / 2;
+
+    display_touch_capture(false);
+    s_touch_cal_result_visible = true;
+    if (abs(x_right - x_left) <= TOUCH_CAL_MIN_SPAN ||
+        abs(y_bottom - y_top) <= TOUCH_CAL_MIN_SPAN) {
+        ui_show_touch_calibration_result(false, false);
+        enter_state(APP_TOUCH_CAL, TOUCH_CAL_RESULT_MS);
+        return;
+    }
+
+    app_config_t updated = s_cfg;
+    updated.touch_cal_x_left = (uint32_t)x_left;
+    updated.touch_cal_x_right = (uint32_t)x_right;
+    updated.touch_cal_y_top = (uint32_t)y_top;
+    updated.touch_cal_y_bottom = (uint32_t)y_bottom;
+    if (storage_save_touch_cal(&updated) != ESP_OK) {
+        ui_show_touch_calibration_result(false, true);
+        enter_state(APP_TOUCH_CAL, TOUCH_CAL_RESULT_MS);
+        return;
+    }
+
+    s_cfg = updated;
+    bool applied = display_touch_set_calibration(x_left, x_right, y_top, y_bottom);
+    configASSERT(applied);
+    ui_show_touch_calibration_result(true, false);
+    enter_state(APP_TOUCH_CAL, TOUCH_CAL_RESULT_MS);
+}
+
 static void handle_ui(const ui_event_t *evt)
 {
     switch (evt->type) {
@@ -275,25 +323,19 @@ static void handle_ui(const ui_event_t *evt)
         handle_link(evt->product_id);
         break;
     case UI_EVT_OPEN_SETTINGS:
-        ui_show_settings(s_cfg.beep_enabled, s_cfg.light_enabled, s_cfg.language,
-                         s_cfg.screen_timeout_seconds);
-        enter_state(APP_SETTINGS, SCREEN_TIMEOUT_MS);
+        show_settings();
         break;
     case UI_EVT_TOGGLE_BEEP:
         s_cfg.beep_enabled = !s_cfg.beep_enabled;
         storage_save_settings(&s_cfg);
         gm67_set_beep(s_cfg.beep_enabled); /* best-effort runtime PARAM_SEND */
-        ui_show_settings(s_cfg.beep_enabled, s_cfg.light_enabled, s_cfg.language,
-                         s_cfg.screen_timeout_seconds);
-        enter_state(APP_SETTINGS, SCREEN_TIMEOUT_MS); /* re-arm the idle fallback */
+        show_settings(); /* re-arm the idle fallback */
         break;
     case UI_EVT_TOGGLE_LIGHT:
         s_cfg.light_enabled = !s_cfg.light_enabled;
         storage_save_settings(&s_cfg);
         status_led_set_enabled(s_cfg.light_enabled);
-        ui_show_settings(s_cfg.beep_enabled, s_cfg.light_enabled, s_cfg.language,
-                         s_cfg.screen_timeout_seconds);
-        enter_state(APP_SETTINGS, SCREEN_TIMEOUT_MS);
+        show_settings();
         break;
     case UI_EVT_TOGGLE_LANGUAGE:
         strlcpy(s_cfg.language, strcmp(s_cfg.language, "nl") == 0 ? "en" : "nl",
@@ -302,9 +344,7 @@ static void handle_ui(const ui_event_t *evt)
         lvgl_port_lock(0);
         i18n_set_language(s_cfg.language);
         lvgl_port_unlock();
-        ui_show_settings(s_cfg.beep_enabled, s_cfg.light_enabled, s_cfg.language,
-                         s_cfg.screen_timeout_seconds);
-        enter_state(APP_SETTINGS, SCREEN_TIMEOUT_MS);
+        show_settings();
         break;
     case UI_EVT_CYCLE_TIMEOUT: {
         /* Cycle presets: 30 → 60 → 120 → 300 → 0 (Never) → 30 → … */
@@ -320,11 +360,40 @@ static void handle_ui(const ui_event_t *evt)
         s_cfg.screen_timeout_seconds = presets[idx];
         storage_save_settings(&s_cfg);
         ui_set_screen_timeout(s_cfg.screen_timeout_seconds); /* immediate effect */
-        ui_show_settings(s_cfg.beep_enabled, s_cfg.light_enabled, s_cfg.language,
-                         s_cfg.screen_timeout_seconds);
-        enter_state(APP_SETTINGS, SCREEN_TIMEOUT_MS);
+        show_settings();
         break;
     }
+    case UI_EVT_OPEN_TOUCH_CAL:
+        if (s_state == APP_SETTINGS) {
+            s_touch_cal_index = 0;
+            s_touch_cal_result_visible = false;
+            display_touch_capture(true);
+            ui_show_touch_calibration();
+            enter_state(APP_TOUCH_CAL, 2 * SCREEN_TIMEOUT_MS);
+        }
+        break;
+    case UI_EVT_CAL_TAP:
+        if (s_state == APP_TOUCH_CAL && !s_touch_cal_result_visible &&
+            s_touch_cal_index < TOUCH_CAL_TARGET_COUNT) {
+            display_touch_capture(false);
+            touch_cal_sample_t *sample = &s_touch_cal_samples[s_touch_cal_index];
+            if (!display_touch_get_sample(&sample->x, &sample->y)) {
+                break;
+            }
+            s_touch_cal_index++;
+            if (s_touch_cal_index == TOUCH_CAL_TARGET_COUNT) {
+                finish_touch_calibration();
+            } else {
+                ui_touch_calibration_set_target(s_touch_cal_index);
+            }
+        }
+        break;
+    case UI_EVT_CAL_RELEASE:
+        if (s_state == APP_TOUCH_CAL && !s_touch_cal_result_visible &&
+            s_touch_cal_index < TOUCH_CAL_TARGET_COUNT) {
+            display_touch_capture(true);
+        }
+        break;
     case UI_EVT_SLEEP:
         if (s_state != APP_IDLE) {
             /* Race: a scan arrived and changed state before we dequeued the
@@ -350,7 +419,13 @@ static void handle_ui(const ui_event_t *evt)
         go_idle();
         break;
     case UI_EVT_DISMISS:
-        go_idle();
+        if (s_state == APP_TOUCH_CAL) {
+            display_touch_capture(false);
+            s_touch_cal_result_visible = false;
+            show_settings();
+        } else {
+            go_idle();
+        }
         break;
     }
 }
@@ -413,6 +488,28 @@ static void start_sntp(void)
 /* Boot                                                                */
 /* ------------------------------------------------------------------ */
 
+static void apply_stored_touch_calibration(void)
+{
+    bool present = s_cfg.touch_cal_x_left != 0 ||
+                   s_cfg.touch_cal_x_right != 0 ||
+                   s_cfg.touch_cal_y_top != 0 ||
+                   s_cfg.touch_cal_y_bottom != 0;
+    bool in_range = s_cfg.touch_cal_x_left <= UINT16_MAX &&
+                    s_cfg.touch_cal_x_right <= UINT16_MAX &&
+                    s_cfg.touch_cal_y_top <= UINT16_MAX &&
+                    s_cfg.touch_cal_y_bottom <= UINT16_MAX;
+    if (!present || !in_range ||
+        !display_touch_set_calibration((int32_t)s_cfg.touch_cal_x_left,
+                                       (int32_t)s_cfg.touch_cal_x_right,
+                                       (int32_t)s_cfg.touch_cal_y_top,
+                                       (int32_t)s_cfg.touch_cal_y_bottom)) {
+        display_touch_set_identity();
+        if (present) {
+            ESP_LOGW(TAG, "stored touch calibration is invalid; using identity");
+        }
+    }
+}
+
 void app_main(void)
 {
     ESP_ERROR_CHECK(storage_init());
@@ -420,6 +517,7 @@ void app_main(void)
     ESP_ERROR_CHECK(storage_load(&s_cfg));
 
     ESP_ERROR_CHECK(display_init());
+    apply_stored_touch_calibration();
     lvgl_port_lock(0);
     esp_err_t ui_err = ui_fonts_init();
     if (ui_err == ESP_OK) {
@@ -538,7 +636,13 @@ void app_main(void)
             break;
         case APP_EVT_TIMEOUT:
             if (s_state != APP_IDLE && esp_timer_get_time() >= s_timeout_deadline) {
-                go_idle();
+                if (s_state == APP_TOUCH_CAL) {
+                    display_touch_capture(false);
+                    s_touch_cal_result_visible = false;
+                    show_settings();
+                } else {
+                    go_idle();
+                }
             }
             break;
         }

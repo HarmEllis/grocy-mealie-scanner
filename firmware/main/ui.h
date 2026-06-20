@@ -20,6 +20,9 @@ typedef enum {
     UI_EVT_TOGGLE_LIGHT,     /* status-light row tapped on the settings screen */
     UI_EVT_TOGGLE_LANGUAGE,  /* language row tapped on the settings screen */
     UI_EVT_CYCLE_TIMEOUT,    /* screen-timeout row tapped on the settings screen */
+    UI_EVT_OPEN_TOUCH_CAL,   /* touch-calibration row tapped */
+    UI_EVT_CAL_TAP,          /* calibration overlay pressed; raw sample is ready */
+    UI_EVT_CAL_RELEASE,      /* calibration overlay released; arm next sample */
     UI_EVT_SLEEP,            /* touch inactivity exceeded the configured timeout */
     UI_EVT_WAKE,             /* user touched the sleep overlay — device should wake */
 } ui_event_type_t;
@@ -53,6 +56,9 @@ void ui_show_search_results(const api_search_result_t *results);
 void ui_show_error(const char *message);
 void ui_show_settings(bool beep, bool light, const char *language,
                       uint32_t timeout_seconds);
+void ui_show_touch_calibration(void);
+void ui_touch_calibration_set_target(uint8_t target_index);
+void ui_show_touch_calibration_result(bool success, bool save_failed);
 
 /* Update the idle inactivity threshold used by the screen-sleep timer.
  * 0 = sleep disabled.  Safe to call from any task (no LVGL lock required). */

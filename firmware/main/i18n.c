@@ -53,6 +53,14 @@
     X("screen_timeout", "Screen timeout", "Schermtime-out") \
     X("screen_timeout_never", "Never", "Nooit") \
     X("seconds_fmt", "%d s", "%d s") \
+    X("touch_calibrate", "Calibrate touch", "Touch kalibreren") \
+    X("touch_cal_instr", "Tap the centre of each target", \
+      "Tik op het midden van elk doel") \
+    X("touch_cal_done", "Touch calibration saved", "Touchkalibratie opgeslagen") \
+    X("touch_cal_invalid", "Calibration failed. Tap all four corners.", \
+      "Kalibratie mislukt. Tik op alle vier hoeken.") \
+    X("touch_cal_save_failed", "Could not save touch calibration", \
+      "Touchkalibratie kon niet worden opgeslagen") \
     X("setup", "Setup", "Instellen") \
     X("setup_info_fmt", "Scan to join  %s\npassword  %s\nthen open  http://192.168.4.1", \
       "Scan voor  %s\nwachtwoord  %s\nopen daarna  http://192.168.4.1") \
