@@ -1025,16 +1025,28 @@ void ui_show_search_results(const api_search_result_t *results)
 /* Settings                                                            */
 /* ------------------------------------------------------------------ */
 
-static void toggle_beep_cb(lv_event_t *e)
+static void cycle_beep_cb(lv_event_t *e)
 {
     (void)e;
-    emit(UI_EVT_TOGGLE_BEEP, 0, 0, NULL);
+    emit(UI_EVT_CYCLE_BEEP, 0, 0, NULL);
 }
 
 static void toggle_light_cb(lv_event_t *e)
 {
     (void)e;
     emit(UI_EVT_TOGGLE_LIGHT, 0, 0, NULL);
+}
+
+static void cycle_scanner_light_cb(lv_event_t *e)
+{
+    (void)e;
+    emit(UI_EVT_CYCLE_SCANNER_LIGHT, 0, 0, NULL);
+}
+
+static void cycle_collimation_cb(lv_event_t *e)
+{
+    (void)e;
+    emit(UI_EVT_CYCLE_COLLIMATION, 0, 0, NULL);
 }
 
 static void toggle_language_cb(lv_event_t *e)
@@ -1095,6 +1107,51 @@ static void make_settings_row(lv_obj_t *parent, int y, const char *title,
     if (on) {
         lv_obj_add_state(sw, LV_STATE_CHECKED);
     }
+}
+
+static const char *beep_level_str(uint8_t level)
+{
+    switch (level) {
+    case 0: return tr("beep_off");
+    case 1: return tr("beep_low");
+    case 3: return tr("beep_high");
+    default: return tr("beep_med");
+    }
+}
+
+static const char *light_mode_str(uint8_t mode)
+{
+    return mode == 0 ? tr("on_scan") : tr("always_off");
+}
+
+static void make_cycle_row(lv_obj_t *parent, int y, const char *title,
+                           const char *value, lv_event_cb_t cb)
+{
+    lv_obj_t *row = lv_obj_create(parent);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_size(row, 212, 48);
+    lv_obj_set_pos(row, 0, y);
+    lv_obj_set_style_radius(row, 11, 0);
+    lv_obj_set_style_bg_color(row, COL_CARD, 0);
+    lv_obj_set_style_bg_opa(row, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(row, COL_BORDER, 0);
+    lv_obj_set_style_border_width(row, 1, 0);
+    lv_obj_set_style_pad_hor(row, 12, 0);
+    lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_bg_color(row, lv_color_hex(0x26262b), LV_STATE_PRESSED);
+    lv_obj_add_event_cb(row, cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *t = lv_label_create(row);
+    lv_label_set_text(t, title);
+    lv_obj_set_style_text_font(t, &gms_font_14, 0);
+    lv_obj_set_style_text_color(t, COL_TEXT, 0);
+    lv_obj_align(t, LV_ALIGN_LEFT_MID, 0, 0);
+
+    lv_obj_t *v = lv_label_create(row);
+    lv_label_set_text(v, value);
+    lv_obj_set_style_text_font(v, &gms_font_12, 0);
+    lv_obj_set_style_text_color(v, COL_BLUE, 0);
+    lv_obj_align(v, LV_ALIGN_RIGHT_MID, 0, 0);
 }
 
 static void make_language_row(lv_obj_t *parent, int y, const char *language)
@@ -1191,14 +1248,13 @@ static void make_navigation_row(lv_obj_t *parent, int y, const char *title,
     lv_obj_align(chevron, LV_ALIGN_RIGHT_MID, 0, 0);
 }
 
-void ui_show_settings(bool beep, bool light, const char *language,
-                      uint32_t timeout_seconds)
+void ui_show_settings(uint8_t beep_level, bool light, const char *language,
+                      uint32_t timeout_seconds, uint8_t scanner_light,
+                      uint8_t collimation)
 {
     lvgl_port_lock(0);
     lv_obj_t *content = screen_reset(NULL, COL_TEXT, false);
 
-    /* Custom header (back chevron + centered title) per the design settings
-     * screen — no connection dot or clock here. */
     lv_obj_t *bar = lv_obj_create(content);
     lv_obj_remove_style_all(bar);
     lv_obj_set_size(bar, 240, STATUS_BAR_H);
@@ -1230,33 +1286,42 @@ void ui_show_settings(bool beep, bool light, const char *language,
     lv_obj_set_size(body, 240, 320 - STATUS_BAR_H);
     lv_obj_set_pos(body, 0, STATUS_BAR_H);
     lv_obj_set_style_pad_hor(body, 14, 0);
-    /* Allow silent scrolling in case the content is taller than the viewport
-     * (e.g. with a long translated note at the bottom). */
     lv_obj_set_scrollbar_mode(body, LV_SCROLLBAR_MODE_OFF);
 
-    lv_obj_t *section = lv_label_create(body);
-    lv_label_set_text(section, tr("scan_feedback"));
-    lv_obj_set_style_text_font(section, &gms_font_10, 0);
-    lv_obj_set_style_text_color(section, COL_DIM2, 0);
-    lv_obj_set_pos(section, 2, 14);
+    /* Section 1: Scan feedback */
+    lv_obj_t *section1 = lv_label_create(body);
+    lv_label_set_text(section1, tr("scan_feedback"));
+    lv_obj_set_style_text_font(section1, &gms_font_10, 0);
+    lv_obj_set_style_text_color(section1, COL_DIM2, 0);
+    lv_obj_set_pos(section1, 2, 14);
 
-    make_settings_row(body, 34, tr("scanner_beep"), tr("decode_tone"),
-                      beep, toggle_beep_cb);
-    make_settings_row(body, 98, tr("status_light"), tr("result_flash"),
+    make_cycle_row(body, 34, tr("scanner_beep"), beep_level_str(beep_level), cycle_beep_cb);
+    make_settings_row(body, 90, tr("status_light"), tr("result_flash"),
                       light, toggle_light_cb);
-    make_language_row(body, 162, language);
-    make_timeout_row(body, 218, timeout_seconds);
-    make_navigation_row(body, 274, tr("touch_calibrate"), open_touch_cal_cb);
 
-    /* Note placed after the last row with a fixed offset so it remains part
-     * of the scrollable content instead of colliding with the final card. */
+    /* Section 2: Scanner hardware */
+    lv_obj_t *section2 = lv_label_create(body);
+    lv_label_set_text(section2, tr("scanner"));
+    lv_obj_set_style_text_font(section2, &gms_font_10, 0);
+    lv_obj_set_style_text_color(section2, COL_DIM2, 0);
+    lv_obj_set_pos(section2, 2, 160);
+
+    make_cycle_row(body, 178, tr("scanner_light"),
+                   light_mode_str(scanner_light), cycle_scanner_light_cb);
+    make_cycle_row(body, 234, tr("collimation"),
+                   light_mode_str(collimation), cycle_collimation_cb);
+
+    make_language_row(body, 298, language);
+    make_timeout_row(body, 354, timeout_seconds);
+    make_navigation_row(body, 410, tr("touch_calibrate"), open_touch_cal_cb);
+
     lv_obj_t *note = lv_label_create(body);
     lv_label_set_text(note, tr("changes_next_scan"));
     lv_obj_set_style_text_font(note, &gms_font_10, 0);
     lv_obj_set_style_text_color(note, COL_DIM2, 0);
     lv_obj_set_width(note, 212);
     lv_obj_set_style_text_align(note, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(note, 0, 330);
+    lv_obj_set_pos(note, 0, 466);
     lvgl_port_unlock();
 }
 

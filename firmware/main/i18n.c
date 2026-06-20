@@ -54,6 +54,15 @@
     X("screen_timeout_never", "Never", "Nooit") \
     X("seconds_fmt", "%d s", "%d s") \
     X("touch_calibrate", "Calibrate touch", "Touch kalibreren") \
+    X("scanner", "SCANNER", "SCANNER") \
+    X("beep_off", "Off", "Uit") \
+    X("beep_low", "Low", "Laag") \
+    X("beep_med", "Medium", "Middel") \
+    X("beep_high", "High", "Hoog") \
+    X("scanner_light", "Scan light", "Scanlamp") \
+    X("collimation", "Aim light", "Richtlamp") \
+    X("on_scan", "On scan", "Bij scan") \
+    X("always_off", "Always off", "Altijd uit") \
     X("touch_cal_instr", "Tap the centre of each target", \
       "Tik op het midden van elk doel") \
     X("touch_cal_done", "Touch calibration saved", "Touchkalibratie opgeslagen") \

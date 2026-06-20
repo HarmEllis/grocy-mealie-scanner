@@ -62,5 +62,7 @@ CONFIG_LV_FONT_MONTSERRAT_20=y
 CONFIG_LV_FONT_MONTSERRAT_22=y
 CONFIG_LV_FONT_MONTSERRAT_24=y
 
-# Log level
+# Default log level INFO; maximum DEBUG so esp_log_level_set() can enable
+# per-tag debug output (e.g. "gm67") without flooding the console.
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_LOG_MAXIMUM_LEVEL=4

@@ -60,6 +60,11 @@ configure the device on first boot.
 
 The device reboots, pings the API, and lands on the idle screen ready to scan.
 
+> **Scanner first-time setup** — before scanning barcodes, configure the GM67
+> scanner with four QR codes from its manual (TTL serial, 9600 baud, continuous
+> mode, CR+LF terminator). See [docs/scanner-setup.md](docs/scanner-setup.md)
+> for step-by-step instructions.
+
 ## Flashing the firmware
 
 ### Web flasher (recommended)

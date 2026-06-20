@@ -21,9 +21,7 @@
 /* The longest reply frame we recognise is a 7-byte CMD_NAK. */
 #define GM67_MAX_FRAME_LEN 8
 
-/* A reply frame the module can send us. Phase 1 enables none of the optional
- * traffic (heartbeat, packet mode, "not read" messages), so this set is just
- * the ACK and the three NAK variants. */
+/* A reply frame the module can send us. */
 typedef enum {
     GM67_REPLY_ACK,
     GM67_REPLY_NAK_RESEND,
@@ -39,15 +37,27 @@ typedef struct {
     const char    *name;
 } gm67_cmd_t;
 
-/* The Phase 1 boot configuration sequence, applied in order. */
-extern const gm67_cmd_t gm67_config_seq[];
-extern const size_t     gm67_config_seq_len;
+/* Immediate control commands (§3, Opcode Table).  All are fire-and-forget
+ * frames queued via the owning task, never awaited for ACK. */
+extern const gm67_cmd_t gm67_cmd_scan_enable;   /* 0xE9: resume scan engine   */
+extern const gm67_cmd_t gm67_cmd_scan_disable;  /* 0xEA: pause scan engine    */
+extern const gm67_cmd_t gm67_cmd_start_decode;  /* 0xE4: one-shot (Host mode) */
+extern const gm67_cmd_t gm67_cmd_stop_decode;   /* 0xE5: abort active scan    */
+extern const gm67_cmd_t gm67_cmd_beep_cue;      /* 0xE6: immediate single beep */
+extern const gm67_cmd_t gm67_cmd_sleep;         /* 0xEB: enter low-power sleep */
 
-/* Runtime good-read beep toggle (Phase 2 settings screen). The boot sequence
- * always enables the beep; the owning task re-sends one of these as a single
- * best-effort PARAM_SEND when the user flips the setting (see gm67_set_beep). */
-extern const gm67_cmd_t gm67_cmd_beep_on;
+/* Runtime scanner settings — sent fire-and-forget when the user changes a
+ * setting on the settings screen.  Beep level requires two commands for
+ * non-off values: first gm67_cmd_beep_on, then the volume command. */
 extern const gm67_cmd_t gm67_cmd_beep_off;
+extern const gm67_cmd_t gm67_cmd_beep_on;
+extern const gm67_cmd_t gm67_cmd_beep_vol_low;
+extern const gm67_cmd_t gm67_cmd_beep_vol_med;
+extern const gm67_cmd_t gm67_cmd_beep_vol_high;
+extern const gm67_cmd_t gm67_cmd_light_on_scan;
+extern const gm67_cmd_t gm67_cmd_light_off;
+extern const gm67_cmd_t gm67_cmd_collim_on_scan;
+extern const gm67_cmd_t gm67_cmd_collim_off;
 
 /* Validate a complete frame's trailing 16-bit checksum. Used by tests. */
 bool gm67_frame_valid(const uint8_t *frame, size_t len);

@@ -2,6 +2,7 @@
 
 #include "esp_err.h"
 #include <stdbool.h>
+#include <stdint.h>
 
 /* Buffer size: the device API permits 64-character barcodes, so reserve
  * 64 code bytes + the NUL terminator. */
@@ -12,28 +13,50 @@
  * characters. Keep the callback short; hand off to a queue. */
 typedef void (*gm67_scan_cb_t)(const char *code);
 
-/* Starts UART1 and the GM67 owning task. The task first pushes a serial
- * configuration sequence to the module (continuous scan, Code-only payload,
- * CR LF terminator, good-read beep — see docs/GM67-IMPROVEMENT-PLAN.md), so a
- * serially reachable module is driven into a known state without setup
- * barcodes. Configuration is best-effort: a module that does not respond
- * (wrong baud, USB-KBW, older firmware) falls through to passive reading, so
- * the read path is never bricked. Requires the module on TTL serial at
- * 9600 8N1 for the configuration to be reachable. Identical codes within
- * `debounce_ms` are dropped so a product held in front fires once. */
+/* GM67 beep level.  Values map to NVS storage (do not reorder). */
+typedef enum {
+    GM67_BEEP_OFF    = 0,
+    GM67_BEEP_LOW    = 1,
+    GM67_BEEP_MEDIUM = 2,
+    GM67_BEEP_HIGH   = 3,
+} gm67_beep_level_t;
+
+/* GM67 scanning illumination light mode. */
+typedef enum {
+    GM67_LIGHT_ON_SCAN    = 0,
+    GM67_LIGHT_ALWAYS_OFF = 1,
+} gm67_light_mode_t;
+
+/* GM67 collimation/aiming light mode. */
+typedef enum {
+    GM67_COLLIM_ON_SCAN    = 0,
+    GM67_COLLIM_ALWAYS_OFF = 1,
+} gm67_collim_mode_t;
+
+/* Starts UART1 and the GM67 owning task.  The scanner must already be in TTL
+ * serial mode (scan the UART QR code from the GM67 manual once; the setting
+ * persists in the scanner's own NVS).  Identical codes within `debounce_ms`
+ * are dropped so a product held in front fires once. */
 esp_err_t gm67_init(gm67_scan_cb_t cb, uint32_t debounce_ms);
 
-/* Toggle the module's good-read beep at runtime (Phase 2 settings screen).
- * Fire-and-forget per the single-UART-owner design: the byte sequence is sent
- * by the owning task, and the return value reports queue admission only
- * (ESP_OK = enqueued), never a module ACK. A dropped toggle is cosmetic (a
- * missed or spurious beep on the next scan). Safe to call from any task; must
- * be called after gm67_init(). */
-esp_err_t gm67_set_beep(bool enabled);
+/* Set the good-read beep level.  Fire-and-forget: enqueues one or two
+ * PARAM_SEND commands to the owning task; returns ESP_OK on successful
+ * enqueue, ESP_ERR_NO_MEM if the queue is full.  The setting persists in
+ * the scanner's NVS. */
+esp_err_t gm67_set_beep_level(gm67_beep_level_t level);
 
-/* Enable or disable the software scanning gate (screen sleep feature).
- * enabled=true  → submit_code() forwards scans normally.
- * enabled=false → submit_code() drops all decoded frames immediately.
- * Pure atomic flag write: no hardware interaction, no command queue.
+/* Set the scanning illumination light mode.  Fire-and-forget. */
+esp_err_t gm67_set_scanner_light(gm67_light_mode_t mode);
+
+/* Set the collimation/aiming light mode.  Fire-and-forget. */
+esp_err_t gm67_set_collimation(gm67_collim_mode_t mode);
+
+/* Enable or disable the scanning gate (screen sleep feature).
+ * enabled=false → software gate closes immediately (authoritative guard), then
+ *   SCAN_DISABLE is queued best-effort; always returns ESP_OK.
+ * enabled=true  → SCAN_ENABLE is queued first; the software gate opens only
+ *   on success.  Returns ESP_ERR_NO_MEM if the command queue is full (gate
+ *   stays closed so the caller can retry), ESP_ERR_INVALID_STATE if called
+ *   before gm67_init().
  * Safe to call from any task after gm67_init(). */
 esp_err_t gm67_set_scanning(bool enabled);

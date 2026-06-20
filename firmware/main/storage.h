@@ -18,8 +18,10 @@ typedef struct {
     char api_token[STORAGE_TOKEN_LEN];
     char ap_pass[STORAGE_AP_PASS_LEN]; /* SoftAP password, generated once */
     char language[STORAGE_LANGUAGE_LEN]; /* BCP 47 code: "en" or "nl" */
-    bool beep_enabled;  /* GM67 good-read beep (settings screen; default on) */
-    bool light_enabled; /* WS2812 result flash (settings screen; default on) */
+    uint8_t beep_level;    /* gm67_beep_level_t; default GM67_BEEP_MEDIUM (2) */
+    bool    light_enabled; /* WS2812 result flash (settings screen; default on) */
+    uint8_t scanner_light; /* gm67_light_mode_t; default GM67_LIGHT_ON_SCAN (0) */
+    uint8_t collimation;   /* gm67_collim_mode_t; default GM67_COLLIM_ON_SCAN (0) */
     uint32_t screen_timeout_seconds; /* backlight+panel sleep after idle; 0 = never */
     uint32_t touch_cal_x_left;
     uint32_t touch_cal_x_right;

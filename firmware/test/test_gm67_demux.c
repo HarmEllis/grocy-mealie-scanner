@@ -93,6 +93,21 @@ int main(void)
     CHECK(gm67_cmd_beep_on.len == gm67_cmd_beep_off.len);
     CHECK(gm67_cmd_beep_on.bytes[6] == 0x01 && gm67_cmd_beep_off.bytes[6] == 0x00);
 
+    /* 1c. control command frames (§3 Opcode Table) carry valid checksums */
+    CHECK(gm67_frame_valid(gm67_cmd_scan_enable.bytes,  gm67_cmd_scan_enable.len));
+    CHECK(gm67_frame_valid(gm67_cmd_scan_disable.bytes, gm67_cmd_scan_disable.len));
+    CHECK(gm67_frame_valid(gm67_cmd_start_decode.bytes, gm67_cmd_start_decode.len));
+    CHECK(gm67_frame_valid(gm67_cmd_stop_decode.bytes,  gm67_cmd_stop_decode.len));
+    CHECK(gm67_frame_valid(gm67_cmd_beep_cue.bytes,     gm67_cmd_beep_cue.len));
+    CHECK(gm67_frame_valid(gm67_cmd_sleep.bytes,        gm67_cmd_sleep.len));
+    /* Opcodes match the reference document */
+    CHECK(gm67_cmd_scan_enable.bytes[1]  == 0xE9);
+    CHECK(gm67_cmd_scan_disable.bytes[1] == 0xEA);
+    CHECK(gm67_cmd_start_decode.bytes[1] == 0xE4);
+    CHECK(gm67_cmd_stop_decode.bytes[1]  == 0xE5);
+    CHECK(gm67_cmd_beep_cue.bytes[1]     == 0xE6);
+    CHECK(gm67_cmd_sleep.bytes[1]        == 0xEB);
+
     /* 2. scan-only: a plain barcode passes through untouched, no replies */
     {
         const char *bc = "5901234123457\r\n";
