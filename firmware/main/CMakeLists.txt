@@ -7,6 +7,14 @@ else()
     set(API_CLIENT_SRC api_client.c)
 endif()
 
+# OTA firmware updates pull signed images from GitHub Releases over HTTPS.
+# Demo builds have no WiFi/network, so the module is left out entirely.
+if(CONFIG_GMS_DEMO_MODE)
+    set(OTA_SRCS "")
+else()
+    set(OTA_SRCS ota_update.c)
+endif()
+
 idf_component_register(
     SRCS
         main.c
@@ -21,12 +29,14 @@ idf_component_register(
         wifi_conn.c
         captive_dns.c
         ${API_CLIENT_SRC}
+        ${OTA_SRCS}
     INCLUDE_DIRS .
     REQUIRES
         driver
         esp_event
         esp_http_client
         esp_http_server
+        esp_https_ota
         esp_netif
         esp_timer
         esp_wifi

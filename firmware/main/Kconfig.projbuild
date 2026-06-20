@@ -19,4 +19,18 @@ menu "Grocy-Mealie scanner"
             Leave this off for production firmware that talks to
             grocy-mealie-sync.
 
+    config GMS_OTA_CHECK_INTERVAL_HOURS
+        int "OTA update check interval (hours)"
+        default 24
+        range 1 168
+        depends on !GMS_DEMO_MODE
+        help
+            How often the firmware polls GitHub Releases for a newer signed
+            image. A first check also runs a few seconds after boot, once
+            WiFi and SNTP have settled.
+
+            GitHub's unauthenticated API is rate-limited to 60 requests per
+            hour per public IP, so keep this generous. The default of 24 h is
+            plenty for a home appliance; lower it only for testing.
+
 endmenu
