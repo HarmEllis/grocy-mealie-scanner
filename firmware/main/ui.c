@@ -1115,6 +1115,14 @@ static void open_touch_cal_cb(lv_event_t *e)
     emit(UI_EVT_OPEN_TOUCH_CAL, 0, 0, NULL);
 }
 
+#if !CONFIG_GMS_DEMO_MODE
+static void check_update_cb(lv_event_t *e)
+{
+    (void)e;
+    emit(UI_EVT_CHECK_UPDATE, 0, 0, NULL);
+}
+#endif
+
 /* One toggle card: title + subtitle + a state-only switch (the whole row is the
  * tap target, so the switch itself does not handle clicks). */
 static void make_settings_row(lv_obj_t *parent, int y, const char *title,
@@ -1364,13 +1372,20 @@ void ui_show_settings(uint8_t beep_level, bool light, const char *language,
     make_navigation_row(body, 410, tr("touch_calibrate"), open_touch_cal_cb);
     make_navigation_row(body, 466, tr("wifi_api_setup"), open_setup_cb);
 
+    int note_y = 522;
+#if !CONFIG_GMS_DEMO_MODE
+    /* OTA lives only in production builds (ota_update.c is excluded from demo). */
+    make_navigation_row(body, 522, tr("ota_check"), check_update_cb);
+    note_y = 578;
+#endif
+
     lv_obj_t *note = lv_label_create(body);
     lv_label_set_text(note, tr("changes_next_scan"));
     lv_obj_set_style_text_font(note, &gms_font_10, 0);
     lv_obj_set_style_text_color(note, COL_DIM2, 0);
     lv_obj_set_width(note, 212);
     lv_obj_set_style_text_align(note, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(note, 0, 522);
+    lv_obj_set_pos(note, 0, note_y);
     lvgl_port_unlock();
 }
 
@@ -1584,6 +1599,52 @@ void ui_show_ota_available(const char *new_version, const char *current_version)
     lv_obj_t *later_btn = make_button(content, tr("ota_later"), false,
                                       ota_skip_cb, NULL);
     lv_obj_align(later_btn, LV_ALIGN_TOP_MID, 0, 227);
+    lvgl_port_unlock();
+}
+
+void ui_show_ota_up_to_date(const char *current_version)
+{
+    lvgl_port_lock(0);
+    lv_obj_t *content = screen_reset(tr("ota_up_to_date"), COL_GREEN, true);
+    lv_obj_add_flag(content, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(content, error_dismiss_cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *circle = lv_obj_create(content);
+    lv_obj_remove_style_all(circle);
+    lv_obj_set_size(circle, 54, 54);
+    lv_obj_align(circle, LV_ALIGN_TOP_MID, 0, 48);
+    lv_obj_set_style_radius(circle, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(circle, COL_GREEN, 0);
+    lv_obj_set_style_bg_opa(circle, 36, 0);
+    lv_obj_set_style_border_color(circle, COL_GREEN, 0);
+    lv_obj_set_style_border_width(circle, 1, 0);
+    lv_obj_set_style_border_opa(circle, 97, 0);
+
+    lv_obj_t *icon = lv_label_create(circle);
+    lv_label_set_text(icon, LV_SYMBOL_OK);
+    lv_obj_set_style_text_font(icon, &gms_font_22, 0);
+    lv_obj_set_style_text_color(icon, COL_GREEN, 0);
+    lv_obj_center(icon);
+
+    lv_obj_t *title = lv_label_create(content);
+    lv_label_set_text(title, tr("ota_up_to_date"));
+    lv_obj_set_style_text_font(title, &gms_font_18, 0);
+    lv_obj_set_style_text_color(title, COL_TEXT, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 122);
+
+    char buf[48];
+    lv_obj_t *cur_label = lv_label_create(content);
+    snprintf(buf, sizeof(buf), tr("ota_current_version_fmt"), current_version);
+    lv_label_set_text(cur_label, buf);
+    lv_obj_set_style_text_font(cur_label, &gms_font_12, 0);
+    lv_obj_set_style_text_color(cur_label, COL_DIM, 0);
+    lv_obj_align(cur_label, LV_ALIGN_TOP_MID, 0, 156);
+
+    lv_obj_t *hint = lv_label_create(content);
+    lv_label_set_text(hint, tr("tap_to_dismiss"));
+    lv_obj_set_style_text_font(hint, &gms_font_12, 0);
+    lv_obj_set_style_text_color(hint, COL_DIM, 0);
+    lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -18);
     lvgl_port_unlock();
 }
 
