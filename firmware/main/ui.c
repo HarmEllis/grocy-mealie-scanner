@@ -409,9 +409,11 @@ void ui_show_idle(void)
         lv_label_set_text(name, s_last_scan_name);
         lv_obj_set_style_text_font(name, &gms_font_12, 0);
         lv_obj_set_style_text_color(name, COL_DIM, 0);
-        lv_obj_set_width(name, 150);
+        /* Start past the tag (wider in some languages, e.g. "LAATSTE") and stop
+         * before the right-aligned timestamp so none of the three overlap. */
+        lv_obj_set_width(name, 128);
         lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
-        lv_obj_align(name, LV_ALIGN_LEFT_MID, 36, 0);
+        lv_obj_align(name, LV_ALIGN_LEFT_MID, 52, 0);
 
         lv_obj_t *when = lv_label_create(footer);
         lv_label_set_text(when, s_last_scan_time);
@@ -653,7 +655,7 @@ void ui_show_flash(const api_action_result_t *result)
     lv_obj_t *badge = lv_obj_create(content);
     lv_obj_remove_style_all(badge);
     lv_obj_set_size(badge, 104, 104);
-    lv_obj_align(badge, LV_ALIGN_TOP_MID, 0, 82);
+    lv_obj_align(badge, LV_ALIGN_TOP_MID, 0, 66);
     lv_obj_set_style_radius(badge, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_color(badge, color, 0);
     lv_obj_set_style_bg_opa(badge, LV_OPA_COVER, 0);
@@ -664,11 +666,18 @@ void ui_show_flash(const api_action_result_t *result)
     lv_obj_set_style_text_color(check, COL_DEVICE, 0);
     lv_obj_center(check);
 
+    /* The action headline is wide in some languages ("Aan lijst toegevoegd"),
+     * which overruns the screen at font_24. Bound the width and wrap; the name
+     * and pill below are bottom-anchored so a two-line headline can grow into
+     * the gap without overlapping them. */
     lv_obj_t *label = lv_label_create(content);
     lv_label_set_text(label, tr(labels[result->action]));
     lv_obj_set_style_text_font(label, &gms_font_24, 0);
     lv_obj_set_style_text_color(label, lv_color_white(), 0);
-    lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 212);
+    lv_obj_set_width(label, 224);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 184);
 
     lv_obj_t *name = lv_label_create(content);
     lv_label_set_text(name, result->product_name);
@@ -677,7 +686,7 @@ void ui_show_flash(const api_action_result_t *result)
     lv_obj_set_width(name, 216);
     lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(name, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(name, LV_ALIGN_TOP_MID, 0, 244);
+    lv_obj_align(name, LV_ALIGN_BOTTOM_MID, 0, -48);
 
     lv_obj_t *pill = lv_obj_create(content);
     lv_obj_remove_style_all(pill);
@@ -686,7 +695,7 @@ void ui_show_flash(const api_action_result_t *result)
     lv_obj_set_style_bg_color(pill, lv_color_white(), 0);
     lv_obj_set_style_bg_opa(pill, 33, 0);
     lv_obj_set_style_pad_hor(pill, 13, 0);
-    lv_obj_align(pill, LV_ALIGN_TOP_MID, 0, 272);
+    lv_obj_align(pill, LV_ALIGN_BOTTOM_MID, 0, -16);
     lv_obj_set_width(pill, LV_SIZE_CONTENT);
 
     lv_obj_t *subl = lv_label_create(pill);
@@ -1056,7 +1065,10 @@ void ui_show_search_results(const api_search_result_t *results)
         lv_label_set_text(name, ref->name);
         lv_obj_set_style_text_font(name, &gms_font_12, 0);
         lv_obj_set_style_text_color(name, COL_TEXT, 0);
-        lv_obj_set_width(name, 150);
+        /* Leave room for the right-aligned stock text, which is wider in some
+         * languages ("12 op voorraad"), so a long name truncates instead of
+         * running under it. */
+        lv_obj_set_width(name, 112);
         lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
         lv_obj_align(name, LV_ALIGN_LEFT_MID, 0, 0);
 
