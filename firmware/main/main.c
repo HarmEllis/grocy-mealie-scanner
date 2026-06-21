@@ -275,6 +275,29 @@ static void handle_ota_accept(void)
     vTaskDelay(pdMS_TO_TICKS(800)); /* let the message render before reboot */
     esp_restart();
 }
+
+/* Manual "check for updates" from the settings screen.  Unlike the silent
+ * periodic handle_ota_check, every outcome is surfaced so the user gets
+ * feedback: the update prompt, an "up to date" screen, or an error. */
+static void handle_ota_check_manual(void)
+{
+    if (!wifi_conn_is_connected()) {
+        show_error(tr("ota_check_failed"));
+        return;
+    }
+    ui_show_connecting(tr("ota_checking")); /* check blocks the app task ~seconds */
+    if (ota_check_for_update(&s_ota_result) != ESP_OK) {
+        show_error(tr("ota_check_failed"));
+        return;
+    }
+    if (s_ota_result.available) {
+        ui_show_ota_available(s_ota_result.new_version, s_ota_result.current_version);
+        enter_state(APP_OTA_PROMPT, 2 * SCREEN_TIMEOUT_MS);
+    } else {
+        ui_show_ota_up_to_date(s_ota_result.current_version);
+        enter_state(APP_ERROR, SCREEN_TIMEOUT_MS); /* tap/timeout returns to idle */
+    }
+}
 #endif
 
 /* ------------------------------------------------------------------ */
@@ -573,6 +596,13 @@ static void handle_ui(const ui_event_t *evt)
 #if !CONFIG_GMS_DEMO_MODE
         if (s_state == APP_OTA_PROMPT) {
             go_idle();
+        }
+#endif
+        break;
+    case UI_EVT_CHECK_UPDATE:
+#if !CONFIG_GMS_DEMO_MODE
+        if (s_state == APP_SETTINGS) {
+            handle_ota_check_manual();
         }
 #endif
         break;

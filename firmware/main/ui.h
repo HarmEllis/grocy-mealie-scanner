@@ -29,6 +29,7 @@ typedef enum {
     UI_EVT_WAKE,             /* user touched the sleep overlay — device should wake */
     UI_EVT_OTA_ACCEPT,       /* "Update" tapped on the OTA-available screen */
     UI_EVT_OTA_SKIP,         /* "Later" tapped on the OTA-available screen */
+    UI_EVT_CHECK_UPDATE,     /* "Check for updates" tapped on the settings screen */
     UI_EVT_OPEN_SETUP,       /* "WiFi & API setup" tapped (settings / conn-error) */
 } ui_event_type_t;
 
@@ -77,6 +78,9 @@ void ui_show_touch_calibration_result(bool success, bool save_failed);
  * is cheap to call from the download progress callback. */
 void ui_show_ota_available(const char *new_version, const char *current_version);
 void ui_show_ota_progress(int percent);
+/* Result of a manual "check for updates" when no newer firmware exists. The
+ * whole screen is a tap target that emits UI_EVT_DISMISS. */
+void ui_show_ota_up_to_date(const char *current_version);
 
 /* Update the idle inactivity threshold used by the screen-sleep timer.
  * 0 = sleep disabled.  Safe to call from any task (no LVGL lock required). */

@@ -121,7 +121,11 @@
     X("ota_later", "Later", "Later") \
     X("ota_installing", "Installing update", "Update installeren") \
     X("ota_restarting", "Restarting...", "Herstarten...") \
-    X("ota_failed", "Update failed", "Update mislukt")
+    X("ota_failed", "Update failed", "Update mislukt") \
+    X("ota_check", "Check for updates", "Controleer op updates") \
+    X("ota_checking", "Checking for updates...", "Controleren op updates...") \
+    X("ota_up_to_date", "You're up to date", "Je bent up-to-date") \
+    X("ota_check_failed", "Update check failed", "Updatecontrole mislukt")
 
 static const char *const s_languages[] = { "en", "nl", NULL };
 
