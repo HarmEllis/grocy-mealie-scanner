@@ -255,6 +255,13 @@ esp_err_t ota_perform_update(const char *tag, ota_progress_cb_t progress_cb)
         .max_redirection_count = MAX_REDIRECTS,
         .crt_bundle_attach     = CRT_BUNDLE_ATTACH,
         .keep_alive_enable     = true,
+        /* GitHub redirects the release asset to objects.githubusercontent.com
+         * with a long signed query string.  The default 512-byte buffers are
+         * too small to hold the request line + headers for that redirected
+         * URL, which surfaces as "HTTP_CLIENT: Out of buffer" and a failed
+         * connection open.  Enlarge both RX and TX buffers. */
+        .buffer_size           = 4096,
+        .buffer_size_tx        = 4096,
     };
 
     esp_https_ota_config_t ota_cfg = {
