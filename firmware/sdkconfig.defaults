@@ -23,6 +23,13 @@ CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
 CONFIG_ESP_TLS_INSECURE=y
 CONFIG_ESP_TLS_SKIP_SERVER_CERT_VERIFY=y
 
+# Allocate mbedTLS buffers (the ~16 KB TLS record buffer in particular) from the
+# 8 MB octal PSRAM instead of internal RAM. After WiFi + LVGL there is no longer
+# a large enough contiguous internal block for the TLS session, so the handshake
+# fails with MBEDTLS_ERR_SSL_ALLOC_FAILED (-0x7F00). The S3's GDMA can reach
+# PSRAM, so hardware AES/SHA still work.
+CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
+
 # OTA update authenticity without burning eFuses. Apps are signed with an
 # RSA-3072 Secure Boot V2 signature block, and OTA updates are verified against
 # the public-key digest from the currently running signed app. This protects
