@@ -530,6 +530,10 @@ void ui_show_product(const api_product_t *product)
     }
     lv_obj_set_style_text_font(sub, &gms_font_12, 0);
     lv_obj_set_style_text_color(sub, COL_DIM, 0);
+    /* quantity_unit is free-form API data; clamp it so an unusually long unit
+     * truncates instead of running off-screen. */
+    lv_obj_set_width(sub, 216);
+    lv_label_set_long_mode(sub, LV_LABEL_LONG_DOT);
     lv_obj_set_pos(sub, 0, 26);
 
     /* Stat cards: In stock / Min / Opened (70px wide, 7px gaps) */
