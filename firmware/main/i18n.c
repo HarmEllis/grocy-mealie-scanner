@@ -25,6 +25,9 @@
     X("on_shopping_list", "On shopping list", "Op boodschappenlijst") \
     X("error", "Error", "Fout") \
     X("tap_to_dismiss", "Tap to dismiss", "Tik om te sluiten") \
+    X("tap_to_retry", "Tap to retry", "Tik om opnieuw te proberen") \
+    X("reconnecting", "Reconnecting...", "Opnieuw verbinden...") \
+    X("wifi_disconnected", "WiFi disconnected", "Geen WiFi-verbinding") \
     X("unknown", "Unknown", "Onbekend") \
     X("product_not_found", "Product not found", "Product niet gevonden") \
     X("link_to_fmt", "Link to %s", "Koppel aan %s") \
@@ -54,6 +57,8 @@
     X("screen_timeout_never", "Never", "Nooit") \
     X("seconds_fmt", "%d s", "%d s") \
     X("touch_calibrate", "Calibrate touch", "Touch kalibreren") \
+    X("wifi_api_setup", "WiFi & API setup", "WiFi & API instellen") \
+    X("opening_setup", "Opening setup...", "Setup openen...") \
     X("scanner", "SCANNER", "SCANNER") \
     X("beep_off", "Off", "Uit") \
     X("beep_low", "Low", "Laag") \
@@ -81,12 +86,18 @@
     X("wifi_password", "WiFi password", "WiFi-wachtwoord") \
     X("base_url", "grocy-mealie-sync base URL", "grocy-mealie-sync basis-URL") \
     X("device_token", "Device token", "Apparaattoken") \
+    X("api_ca_cert", "API CA certificate (PEM, optional)", \
+      "API CA-certificaat (PEM, optioneel)") \
+    X("trust_any_cert", "Trust any certificate (API only)", \
+      "Vertrouw elk certificaat (alleen API)") \
     X("save_reboot", "Save and reboot", "Opslaan en herstarten") \
     X("saved", "Saved!", "Opgeslagen!") \
     X("rebooting", "The scanner reboots and connects to your WiFi.", \
       "De scanner herstart en maakt verbinding met je WiFi.") \
     X("form_too_large", "Form too large", "Formulier is te groot") \
     X("malformed_form", "Malformed form encoding", "Ongeldige formuliercodering") \
+    X("invalid_cert", "Certificate must be PEM (BEGIN CERTIFICATE)", \
+      "Certificaat moet PEM zijn (BEGIN CERTIFICATE)") \
     X("required_fields", "SSID and base URL are required", \
       "SSID en basis-URL zijn verplicht") \
     X("url_too_long", "URL too long", "URL is te lang") \

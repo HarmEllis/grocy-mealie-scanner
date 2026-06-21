@@ -176,6 +176,12 @@ static void open_settings_cb(lv_event_t *e)
     emit(UI_EVT_OPEN_SETTINGS, 0, 0, NULL);
 }
 
+static void open_setup_cb(lv_event_t *e)
+{
+    (void)e;
+    emit(UI_EVT_OPEN_SETUP, 0, 0, NULL);
+}
+
 /* A tappable text/symbol affordance on the status bar (gear, back chevron). */
 static lv_obj_t *add_bar_icon(const char *symbol, lv_align_t align, int dx,
                               lv_event_cb_t cb)
@@ -693,9 +699,12 @@ static void error_dismiss_cb(lv_event_t *e)
     emit(UI_EVT_DISMISS, 0, 0, NULL);
 }
 
-void ui_show_error(const char *message)
+/* Builds the coral warning icon + wrapped message shared by the dismissable
+ * error screen and the sticky connection-error screen. The whole content area
+ * is the tap target (emits UI_EVT_DISMISS). Caller adds the hint/affordances and
+ * unlocks. Must be called under lvgl_port_lock. */
+static lv_obj_t *build_error_content(const char *message)
 {
-    lvgl_port_lock(0);
     lv_obj_t *content = screen_reset(tr("error"), COL_CORAL, true);
     lv_obj_add_flag(content, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(content, error_dismiss_cb, LV_EVENT_CLICKED, NULL);
@@ -725,12 +734,45 @@ void ui_show_error(const char *message)
     lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 122);
+    return content;
+}
+
+void ui_show_error(const char *message)
+{
+    lvgl_port_lock(0);
+    lv_obj_t *content = build_error_content(message);
 
     lv_obj_t *hint = lv_label_create(content);
     lv_label_set_text(hint, tr("tap_to_dismiss"));
     lv_obj_set_style_text_font(hint, &gms_font_12, 0);
     lv_obj_set_style_text_color(hint, COL_DIM, 0);
     lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -18);
+    lvgl_port_unlock();
+}
+
+void ui_show_connection_error(const char *message)
+{
+    lvgl_port_lock(0);
+    lv_obj_t *content = build_error_content(message);
+
+    lv_obj_t *hint = lv_label_create(content);
+    lv_label_set_text(hint, tr("tap_to_retry"));
+    lv_obj_set_style_text_font(hint, &gms_font_12, 0);
+    lv_obj_set_style_text_color(hint, COL_DIM, 0);
+    lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -44);
+
+    /* Escape hatch when WiFi/API URL is wrong: jump straight into setup. */
+    lv_obj_t *setup = lv_label_create(content);
+    char setup_text[40];
+    snprintf(setup_text, sizeof(setup_text), LV_SYMBOL_SETTINGS " %s",
+             tr("wifi_api_setup"));
+    lv_label_set_text(setup, setup_text);
+    lv_obj_set_style_text_font(setup, &gms_font_12, 0);
+    lv_obj_set_style_text_color(setup, COL_BLUE, 0);
+    lv_obj_align(setup, LV_ALIGN_BOTTOM_MID, 0, -16);
+    lv_obj_add_flag(setup, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_ext_click_area(setup, 12);
+    lv_obj_add_event_cb(setup, open_setup_cb, LV_EVENT_CLICKED, NULL);
     lvgl_port_unlock();
 }
 
@@ -1320,6 +1362,7 @@ void ui_show_settings(uint8_t beep_level, bool light, const char *language,
     make_language_row(body, 298, language);
     make_timeout_row(body, 354, timeout_seconds);
     make_navigation_row(body, 410, tr("touch_calibrate"), open_touch_cal_cb);
+    make_navigation_row(body, 466, tr("wifi_api_setup"), open_setup_cb);
 
     lv_obj_t *note = lv_label_create(body);
     lv_label_set_text(note, tr("changes_next_scan"));
@@ -1327,7 +1370,7 @@ void ui_show_settings(uint8_t beep_level, bool light, const char *language,
     lv_obj_set_style_text_color(note, COL_DIM2, 0);
     lv_obj_set_width(note, 212);
     lv_obj_set_style_text_align(note, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(note, 0, 466);
+    lv_obj_set_pos(note, 0, 522);
     lvgl_port_unlock();
 }
 

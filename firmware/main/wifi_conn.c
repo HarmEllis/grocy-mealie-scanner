@@ -1,6 +1,7 @@
 #include "wifi_conn.h"
 #include "captive_dns.h"
 #include "i18n.h"
+#include "storage.h"
 
 #include "esp_check.h"
 #include "esp_event.h"
@@ -19,9 +20,10 @@ static const char *TAG = "wifi";
 
 #define CONNECTED_BIT BIT0
 
-/* Largest provisioning POST we accept. The form's decoded maxima total ~318
- * chars; fully %-escaped that is ~980 bytes, so 1 KB covers any valid body. */
-#define PORTAL_BODY_MAX 1024
+/* Largest provisioning POST we accept. Dominated by the optional CA certificate
+ * (PEM, up to STORAGE_CA_CERT_MAX): fully %-escaped (newlines -> %0A) it roughly
+ * doubles, so allow generous headroom on top of the other fields. */
+#define PORTAL_BODY_MAX (2 * STORAGE_CA_CERT_MAX + 1024)
 
 static EventGroupHandle_t s_events;
 static bool s_sta_started;
@@ -110,8 +112,10 @@ static const char PORTAL_FORM[] =
     "<style>body{font-family:system-ui,sans-serif;background:#161617;color:#ededf0;"
     "max-width:420px;margin:0 auto;padding:24px}h1{font-size:20px}"
     "label{display:block;font-size:13px;color:#8b8b93;margin:14px 0 4px}"
-    "input,select{width:100%%;box-sizing:border-box;padding:10px;border-radius:8px;"
+    "input,select,textarea{width:100%%;box-sizing:border-box;padding:10px;border-radius:8px;"
     "border:1px solid #3a3a40;background:#1e1e22;color:#ededf0;font-size:15px}"
+    "textarea{font-family:monospace;font-size:12px;resize:vertical}"
+    ".chk{display:flex;align-items:center;gap:8px}.chk input{width:auto}"
     "button{margin-top:20px;width:100%%;padding:12px;border-radius:10px;border:0;"
     "background:#f5c13d;color:#0b0b0c;font-size:15px;font-weight:700}</style></head>"
     "<body><h1>%s</h1>"
@@ -123,6 +127,9 @@ static const char PORTAL_FORM[] =
     "<label>%s</label>"
     "<input name='url' value='%s' placeholder='http://192.168.1.10:3000' required maxlength='127'>"
     "<label>%s</label><input name='token' value='%s' maxlength='95'>"
+    "<label>%s</label>"
+    "<textarea name='ca' rows='5' placeholder='-----BEGIN CERTIFICATE-----'>%s</textarea>"
+    "<label class='chk'><input type='checkbox' name='insec' value='1'%s>%s</label>"
     "<button type='submit'>%s</button></form></body></html>";
 
 static bool is_hex_digit(char c)
@@ -193,10 +200,20 @@ static bool form_get_field(const char *body, const char *key, char *dst, size_t 
 
 static esp_err_t portal_get_handler(httpd_req_t *req)
 {
-    /* Heap-allocated: form + values exceed the httpd task stack comfort zone. */
-    size_t cap = sizeof(PORTAL_FORM) + sizeof(app_config_t) + 512;
+    /* The stored CA cert is pre-filled into the textarea; load it (may be empty)
+     * and size the page buffer to fit it so a large PEM is never truncated. */
+    char *ca = malloc(STORAGE_CA_CERT_MAX);
+    if (ca == NULL) {
+        return httpd_resp_send_500(req);
+    }
+    storage_load_api_ca(ca, STORAGE_CA_CERT_MAX, NULL);
+
+    /* Heap-allocated: form + values (incl. the CA PEM) exceed the httpd task
+     * stack comfort zone. */
+    size_t cap = sizeof(PORTAL_FORM) + sizeof(app_config_t) + STORAGE_CA_CERT_MAX + 512;
     char *page = malloc(cap);
     if (page == NULL) {
+        free(ca);
         return httpd_resp_send_500(req);
     }
     bool dutch = strcmp(s_prov_cfg->language, "nl") == 0;
@@ -206,7 +223,11 @@ static esp_err_t portal_get_handler(httpd_req_t *req)
              portal_tr("wifi_network"), s_prov_cfg->wifi_ssid,
              portal_tr("wifi_password"), s_prov_cfg->wifi_pass,
              portal_tr("base_url"), s_prov_cfg->api_url,
-             portal_tr("device_token"), s_prov_cfg->api_token, portal_tr("save_reboot"));
+             portal_tr("device_token"), s_prov_cfg->api_token,
+             portal_tr("api_ca_cert"), ca,
+             s_prov_cfg->api_insecure ? " checked" : "", portal_tr("trust_any_cert"),
+             portal_tr("save_reboot"));
+    free(ca);
     httpd_resp_set_type(req, "text/html");
     esp_err_t err = httpd_resp_send(req, page, HTTPD_RESP_USE_STRLEN);
     free(page);
@@ -243,21 +264,42 @@ static esp_err_t portal_save_handler(httpd_req_t *req)
      * (e.g. the generated ap_pass). Commit only once fully valid. */
     app_config_t cfg = *s_prov_cfg;
     char language[STORAGE_LANGUAGE_LEN];
+    char insec[4] = "";
+    /* The CA PEM can be large; parse it into its own heap buffer (it must outlive
+     * free(body) since it is committed after validation). */
+    char *ca = malloc(STORAGE_CA_CERT_MAX);
+    if (ca == NULL) {
+        free(body);
+        return httpd_resp_send_500(req);
+    }
+    ca[0] = '\0';
     bool ok = form_get_field(body, "ssid", cfg.wifi_ssid, sizeof(cfg.wifi_ssid));
     ok = form_get_field(body, "pass", cfg.wifi_pass, sizeof(cfg.wifi_pass)) && ok;
     ok = form_get_field(body, "url", cfg.api_url, sizeof(cfg.api_url)) && ok;
     ok = form_get_field(body, "token", cfg.api_token, sizeof(cfg.api_token)) && ok;
     ok = form_get_field(body, "lang", language, sizeof(language)) && ok;
+    ok = form_get_field(body, "insec", insec, sizeof(insec)) && ok;
+    ok = form_get_field(body, "ca", ca, STORAGE_CA_CERT_MAX) && ok;
     if (i18n_language_is_supported(language)) {
         strlcpy(cfg.language, language, sizeof(cfg.language));
     } else {
         ok = false;
     }
+    cfg.api_insecure = (insec[0] == '1');
     free(body);
 
     if (!ok) {
+        free(ca);
         httpd_resp_set_status(req, "400 Bad Request");
         return httpd_resp_send(req, portal_tr("malformed_form"), HTTPD_RESP_USE_STRLEN);
+    }
+
+    /* A pasted cert must at least look like a PEM certificate; reject obvious
+     * garbage rather than storing a CA that will fail every handshake. */
+    if (ca[0] != '\0' && strstr(ca, "-----BEGIN CERTIFICATE-----") == NULL) {
+        free(ca);
+        httpd_resp_set_status(req, "400 Bad Request");
+        return httpd_resp_send(req, portal_tr("invalid_cert"), HTTPD_RESP_USE_STRLEN);
     }
 
     /* Strip a trailing slash so the API client can append paths verbatim. */
@@ -267,12 +309,17 @@ static esp_err_t portal_save_handler(httpd_req_t *req)
     }
 
     if (cfg.wifi_ssid[0] == '\0' || cfg.api_url[0] == '\0') {
+        free(ca);
         httpd_resp_set_status(req, "400 Bad Request");
         return httpd_resp_send(req, portal_tr("required_fields"), HTTPD_RESP_USE_STRLEN);
     }
 
     *s_prov_cfg = cfg;
     esp_err_t err = storage_save(s_prov_cfg);
+    if (err == ESP_OK) {
+        err = storage_save_api_ca(ca[0] != '\0' ? ca : NULL);
+    }
+    free(ca);
     if (err != ESP_OK) {
         return httpd_resp_send_500(req);
     }

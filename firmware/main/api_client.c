@@ -1,11 +1,13 @@
 #include "api_client.h"
 
 #include "i18n.h"
+#include "storage.h"
 #include "cJSON.h"
 #include "esp_check.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static const char *TAG = "api";
@@ -19,11 +21,30 @@ static const char *TAG = "api";
 
 static char s_base_url[STORAGE_URL_LEN];
 static char s_auth_header[STORAGE_TOKEN_LEN + 8];
+/* TLS trust for the API only (OTA always uses the strict Mozilla bundle):
+ *   s_ca_pem != NULL -> verify the server against this custom CA (PEM)
+ *   else s_insecure  -> skip verification entirely (trust any cert)
+ *   else             -> verify against the bundled Mozilla CA store */
+static char *s_ca_pem;
+static bool s_insecure;
 
 void api_client_init(const app_config_t *cfg)
 {
     strlcpy(s_base_url, cfg->api_url, sizeof(s_base_url));
     snprintf(s_auth_header, sizeof(s_auth_header), "Bearer %s", cfg->api_token);
+
+    s_insecure = cfg->api_insecure;
+    free(s_ca_pem);
+    s_ca_pem = NULL;
+    char *pem = malloc(STORAGE_CA_CERT_MAX);
+    if (pem != NULL) {
+        size_t len = 0;
+        if (storage_load_api_ca(pem, STORAGE_CA_CERT_MAX, &len) == ESP_OK && len > 0) {
+            s_ca_pem = pem; /* keep: esp_http_client wants the PEM for each call */
+        } else {
+            free(pem);
+        }
+    }
 }
 
 static void set_err(char *errbuf, const char *msg)
@@ -79,12 +100,26 @@ static esp_err_t request_json(const char *method, const char *path, const char *
         .user_data = &acc,
         .crt_bundle_attach = NULL, /* set below only for https */
     };
-#if CONFIG_MBEDTLS_CERTIFICATE_BUNDLE
-    extern esp_err_t esp_crt_bundle_attach(void *conf);
+    /* TLS trust selection for https (see s_ca_pem/s_insecure above). "Trust any"
+     * is an explicit override and wins over any stored CA: it leaves no CA at all
+     * so esp-tls sets MBEDTLS_SSL_VERIFY_NONE (requires
+     * CONFIG_ESP_TLS_SKIP_SERVER_CERT_VERIFY). This also lets the user recover
+     * from a CA that mbedtls cannot parse (e.g. a critical extension it does not
+     * support) without first clearing the stored PEM. Otherwise a custom CA is
+     * used if present, else the bundled Mozilla store. */
     if (strncmp(url, "https://", 8) == 0) {
-        cfg.crt_bundle_attach = esp_crt_bundle_attach;
-    }
+        if (s_insecure) {
+            /* trust any -> no CA configured at all */
+        } else if (s_ca_pem != NULL) {
+            cfg.cert_pem = s_ca_pem;
+            cfg.cert_len = 0; /* NUL-terminated */
+        } else {
+#if CONFIG_MBEDTLS_CERTIFICATE_BUNDLE
+            extern esp_err_t esp_crt_bundle_attach(void *conf);
+            cfg.crt_bundle_attach = esp_crt_bundle_attach;
 #endif
+        }
+    }
 
     esp_http_client_handle_t client = esp_http_client_init(&cfg);
     if (client == NULL) {
