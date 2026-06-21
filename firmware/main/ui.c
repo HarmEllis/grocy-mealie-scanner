@@ -59,6 +59,9 @@ static lv_obj_t *s_sleep_overlay = NULL;
 static char s_pending_barcode[API_BARCODE_LEN];
 static lv_obj_t *s_search_results_box;
 static lv_obj_t *s_touch_cal_target;
+/* Settings body, kept so toggling a setting (which rebuilds the screen) can
+ * preserve the scroll position instead of snapping back to the top. */
+static lv_obj_t *s_settings_body;
 /* OTA progress widgets, kept so ui_show_ota_progress can update the live bar
  * without rebuilding the screen on every percent tick. */
 static lv_obj_t *s_ota_bar;
@@ -236,6 +239,7 @@ static lv_obj_t *screen_reset(const char *status_text, lv_color_t dot_color,
     s_status_clock = NULL;
     s_search_results_box = NULL;
     s_touch_cal_target = NULL;
+    s_settings_body = NULL;
     s_ota_bar = NULL;
     s_ota_pct_label = NULL;
     s_status_shows_conn = false; /* only ui_show_idle re-enables this */
@@ -1309,6 +1313,16 @@ void ui_show_settings(uint8_t beep_level, bool light, const char *language,
                       uint8_t collimation)
 {
     lvgl_port_lock(0);
+    /* Preserve the scroll offset across rebuilds: toggling a setting re-runs
+     * ui_show_settings, and without this the list would snap back to the top
+     * after every change.  s_settings_body is non-NULL only when the previous
+     * screen was also settings (screen_reset clears it otherwise), so a fresh
+     * open still starts at the top. */
+    int saved_scroll_y = 0;
+    if (s_settings_body != NULL) {
+        saved_scroll_y = lv_obj_get_scroll_y(s_settings_body);
+    }
+
     lv_obj_t *content = screen_reset(NULL, COL_TEXT, false);
 
     lv_obj_t *bar = lv_obj_create(content);
@@ -1386,6 +1400,17 @@ void ui_show_settings(uint8_t beep_level, bool light, const char *language,
     lv_obj_set_width(note, 212);
     lv_obj_set_style_text_align(note, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_pos(note, 0, note_y);
+
+    /* Restore the scroll offset captured before the rebuild.  Force a layout
+     * pass first: LVGL defers child bounding-box (and thus scroll-limit)
+     * computation to the next timer-driven layout, so scrolling in the same
+     * frame as the rebuild would otherwise see a max-scroll of 0 and clamp
+     * saved_scroll_y back to the top. */
+    s_settings_body = body;
+    if (saved_scroll_y > 0) {
+        lv_obj_update_layout(body);
+        lv_obj_scroll_to_y(body, saved_scroll_y, LV_ANIM_OFF);
+    }
     lvgl_port_unlock();
 }
 
