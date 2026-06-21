@@ -33,8 +33,13 @@ appropriate 4xx/5xx status.
 Connectivity + auth check used by the firmware at boot and as a health probe.
 
 ```json
-{ "ok": true, "app": "grocy-mealie-sync", "version": "1.9.0" }
+{ "ok": true, "app": "grocy-mealie-sync", "version": "1.9.0", "apiVersion": 2 }
 ```
+
+- `apiVersion` is the device-API capability version. The firmware defaults to
+  `1` when the field is absent (older servers) and uses it to hide features the
+  server does not yet support — e.g. the on-device product-search affordance is
+  shown only when `apiVersion >= 2` (adds `GET /products/{id}`).
 
 ### `GET /api/device/v1/scan/{barcode}`
 
@@ -141,6 +146,25 @@ Grocy products; `limit` defaults to 8, max 25.
 ```
 
 Empty `query` → `400`.
+
+### `GET /api/device/v1/products/{id}`
+
+Fetch one product by id. Backs the home-screen **search → pick** flow: the
+device opens product search from idle (no barcode in flight), the user picks a
+result, and the device shows that product exactly as if it had been scanned —
+without linking any barcode. Requires `apiVersion >= 2` (see `/ping`).
+
+Response (`200`): the **unwrapped** product object at the response root (same
+shape as `POST /products` and `POST /products/{id}/barcodes`, not the `scan`
+envelope):
+
+```json
+{ "id": 42, "name": "Heinz Tomato Ketchup", "quantityUnit": "Bottle",
+  "stockAmount": 3, "openedAmount": 1, "minStockAmount": 2,
+  "onShoppingList": false }
+```
+
+Invalid id (non-positive / non-integer) → `400`; unknown product → `404`.
 
 ### `POST /api/device/v1/products`
 

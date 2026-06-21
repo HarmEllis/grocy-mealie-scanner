@@ -30,7 +30,7 @@ static const char *TAG = "ui";
 #define COL_BORDER   lv_color_hex(0x232328)  /* rgba(255,255,255,.08) on device bg */
 #define COL_BORDER2  lv_color_hex(0x303036)  /* rgba(255,255,255,.14) */
 
-#define STATUS_BAR_H 26
+#define STATUS_BAR_H 30
 
 static ui_event_cb_t s_cb;
 static lv_obj_t *s_screen;        /* single root screen, rebuilt per state */
@@ -40,6 +40,7 @@ static lv_obj_t *s_status_label;
 static lv_obj_t *s_status_clock;
 static bool s_connected;
 static bool s_status_shows_conn; /* true only while the status bar shows Connected/Offline (idle) */
+static bool s_search_available;  /* idle shows the product-search icon only when set */
 static char s_last_scan_name[API_NAME_LEN];
 static char s_last_scan_time[8];
 static lv_timer_t *s_clock_timer;
@@ -172,6 +173,7 @@ void ui_cancel_sleep(void)
 
 /* Defined further down with the other not-found/search callbacks. */
 static void dismiss_cb(lv_event_t *e);
+static void open_search_cb(lv_event_t *e);
 
 static void open_settings_cb(lv_event_t *e)
 {
@@ -191,11 +193,13 @@ static lv_obj_t *add_bar_icon(const char *symbol, lv_align_t align, int dx,
 {
     lv_obj_t *icon = lv_label_create(s_status_bar);
     lv_label_set_text(icon, symbol);
-    lv_obj_set_style_text_font(icon, &gms_font_12, 0);
+    lv_obj_set_style_text_font(icon, &gms_font_14, 0);
     lv_obj_set_style_text_color(icon, COL_DIM, 0);
     lv_obj_align(icon, align, dx, 0);
     lv_obj_add_flag(icon, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_ext_click_area(icon, 8);
+    /* Modest hit padding: large enough to ease tapping, small enough that two
+     * adjacent bar icons (search + gear on idle) keep disjoint hit boxes. */
+    lv_obj_set_ext_click_area(icon, 10);
     lv_obj_add_event_cb(icon, cb, LV_EVENT_CLICKED, NULL);
     return icon;
 }
@@ -260,7 +264,7 @@ static lv_obj_t *screen_reset(const char *status_text, lv_color_t dot_color,
 
         s_status_dot = lv_obj_create(bar);
         lv_obj_remove_style_all(s_status_dot);
-        lv_obj_set_size(s_status_dot, 6, 6);
+        lv_obj_set_size(s_status_dot, 8, 8);
         lv_obj_set_style_radius(s_status_dot, LV_RADIUS_CIRCLE, 0);
         lv_obj_set_style_bg_opa(s_status_dot, LV_OPA_COVER, 0);
         lv_obj_set_style_bg_color(s_status_dot, dot_color, 0);
@@ -268,13 +272,13 @@ static lv_obj_t *screen_reset(const char *status_text, lv_color_t dot_color,
 
         s_status_label = lv_label_create(bar);
         lv_label_set_text(s_status_label, status_text);
-        lv_obj_set_style_text_font(s_status_label, &gms_font_10, 0);
+        lv_obj_set_style_text_font(s_status_label, &gms_font_12, 0);
         lv_obj_set_style_text_color(s_status_label, COL_DIM, 0);
-        lv_obj_align(s_status_label, LV_ALIGN_LEFT_MID, 12, 0);
+        lv_obj_align(s_status_label, LV_ALIGN_LEFT_MID, 14, 0);
 
         s_status_clock = lv_label_create(bar);
         lv_label_set_text(s_status_clock, "--:--");
-        lv_obj_set_style_text_font(s_status_clock, &gms_font_10, 0);
+        lv_obj_set_style_text_font(s_status_clock, &gms_font_12, 0);
         lv_obj_set_style_text_color(s_status_clock, COL_DIM, 0);
         lv_obj_align(s_status_clock, LV_ALIGN_RIGHT_MID, 0, 0);
         clock_tick(NULL);
@@ -307,8 +311,16 @@ void ui_show_idle(void)
                                      s_connected ? COL_GREEN : COL_CORAL, true);
     s_status_shows_conn = true; /* this status bar tracks live connection state */
 
-    /* Settings gear; nudge the clock left so the two don't collide. */
-    lv_obj_align(s_status_clock, LV_ALIGN_RIGHT_MID, -22, 0);
+    /* Right side: settings gear, plus an optional product-search icon to its
+     * left when the server advertises it. Nudge the clock left to clear them. */
+    if (s_search_available) {
+        /* search icon sits well left of the gear so their (padded) hit boxes
+         * stay disjoint; the gear is added last and would otherwise win taps. */
+        lv_obj_align(s_status_clock, LV_ALIGN_RIGHT_MID, -76, 0);
+        add_bar_icon(LV_SYMBOL_KEYBOARD, LV_ALIGN_RIGHT_MID, -44, open_search_cb);
+    } else {
+        lv_obj_align(s_status_clock, LV_ALIGN_RIGHT_MID, -22, 0);
+    }
     add_bar_icon(LV_SYMBOL_SETTINGS, LV_ALIGN_RIGHT_MID, 0, open_settings_cb);
 
     /* Scan frame: 128x96, rounded, amber corner brackets + animated line */
@@ -438,6 +450,13 @@ void ui_set_last_scan(const char *name)
     }
 }
 
+void ui_set_search_available(bool available)
+{
+    /* Read by ui_show_idle when it rebuilds; the app sets this from the last
+     * ping's apiVersion before each return to idle, so no live relayout needed. */
+    s_search_available = available;
+}
+
 void ui_set_connected(bool connected)
 {
     s_connected = connected;
@@ -536,11 +555,13 @@ void ui_show_product(const api_product_t *product)
     lv_label_set_long_mode(sub, LV_LABEL_LONG_DOT);
     lv_obj_set_pos(sub, 0, 26);
 
-    /* Stat cards: In stock / Min / Opened (70px wide, 7px gaps) */
+    /* Stat cards: In stock / Min / Opened (70px wide, 7px gaps).
+     * Vertical rhythm tightened slightly so the action grid still clears the
+     * 320px canvas under the taller status bar (see grid offsets below). */
     lv_obj_t *cards = lv_obj_create(content);
     lv_obj_remove_style_all(cards);
     lv_obj_set_size(cards, 216, 46);
-    lv_obj_set_pos(cards, 0, 48);
+    lv_obj_set_pos(cards, 0, 44);
     lv_color_t stock_color = product->stock_amount <= product->min_stock_amount
                                  ? COL_CORAL
                                  : COL_AMBER;
@@ -548,7 +569,8 @@ void ui_show_product(const api_product_t *product)
     make_stat_card(cards, 73, tr("minimum"), product->min_stock_amount, COL_DIM);
     make_stat_card(cards, 146, tr("opened_stat"), product->opened_amount, COL_GREEN);
 
-    /* 2x2 action grid (tiles 104x82, 8px gap) */
+    /* 2x2 action grid (tiles 104x80, 8px gap). Start/row-gap/height trimmed from
+     * 106/90/82 so the bottom row stays on-screen with the 30px status bar. */
     static const tile_def_t tiles[] = {
         { "action_bought", LV_SYMBOL_PLUS, { 0 }, API_ACTION_PURCHASE },
         { "action_opened", LV_SYMBOL_EJECT, { 0 }, API_ACTION_OPEN },
@@ -560,8 +582,8 @@ void ui_show_product(const api_product_t *product)
     for (int i = 0; i < 4; i++) {
         lv_obj_t *tile = lv_obj_create(content);
         lv_obj_remove_style_all(tile);
-        lv_obj_set_size(tile, 104, 82);
-        lv_obj_set_pos(tile, (i % 2) * 112, 106 + (i / 2) * 90);
+        lv_obj_set_size(tile, 104, 80);
+        lv_obj_set_pos(tile, (i % 2) * 112, 96 + (i / 2) * 86);
         lv_obj_set_style_radius(tile, 11, 0);
         lv_obj_set_style_bg_color(tile, tile_colors[i], 0);
         lv_obj_set_style_bg_opa(tile, 33, 0); /* ≈ .13 fill from the design */
@@ -1354,16 +1376,16 @@ void ui_show_settings(uint8_t beep_level, bool light, const char *language,
     char back_text[32];
     snprintf(back_text, sizeof(back_text), LV_SYMBOL_LEFT " %s", tr("back"));
     lv_label_set_text(back, back_text);
-    lv_obj_set_style_text_font(back, &gms_font_10, 0);
+    lv_obj_set_style_text_font(back, &gms_font_12, 0);
     lv_obj_set_style_text_color(back, COL_DIM, 0);
     lv_obj_align(back, LV_ALIGN_LEFT_MID, 0, 0);
     lv_obj_add_flag(back, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_ext_click_area(back, 10);
+    lv_obj_set_ext_click_area(back, 14);
     lv_obj_add_event_cb(back, dismiss_cb, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *title = lv_label_create(bar);
     lv_label_set_text(title, tr("settings"));
-    lv_obj_set_style_text_font(title, &gms_font_12, 0);
+    lv_obj_set_style_text_font(title, &gms_font_14, 0);
     lv_obj_set_style_text_color(title, COL_TEXT, 0);
     lv_obj_center(title);
 

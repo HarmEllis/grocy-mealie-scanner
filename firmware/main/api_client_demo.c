@@ -90,6 +90,11 @@ esp_err_t api_ping(char *errbuf)
     return ESP_OK;
 }
 
+int api_server_api_version(void)
+{
+    return 2; /* demo server supports the full contract incl. products/{id} */
+}
+
 esp_err_t api_scan(const char *barcode, api_scan_result_t *out, char *errbuf)
 {
     memset(out, 0, sizeof(*out));
@@ -233,6 +238,17 @@ esp_err_t api_link_barcode(int product_id, const char *barcode,
                            api_product_t *out, char *errbuf)
 {
     (void)barcode;
+    api_product_t *p = find_product(product_id);
+    if (p == NULL) {
+        set_err(errbuf, tr("demo_unknown_product"));
+        return ESP_FAIL;
+    }
+    *out = *p;
+    return ESP_OK;
+}
+
+esp_err_t api_get_product(int product_id, api_product_t *out, char *errbuf)
+{
     api_product_t *p = find_product(product_id);
     if (p == NULL) {
         set_err(errbuf, tr("demo_unknown_product"));

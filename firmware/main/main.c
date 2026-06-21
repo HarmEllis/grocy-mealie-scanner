@@ -88,6 +88,10 @@ static uint64_t s_timeout_deadline = UINT64_MAX;
 static app_state_t s_state = APP_IDLE;
 static api_product_t s_product;
 static api_scan_result_t s_scan;
+/* How the active product-search session was opened. true = from the idle screen
+ * (no barcode in flight): a pick fetches the product and shows it as if scanned.
+ * false = from the unknown-barcode flow: a pick links s_scan.barcode instead. */
+static bool s_search_from_idle;
 /* Loaded once at boot; the settings screen mutates feedback and language and
  * persists them, so it lives at file scope rather than on app_main's stack. */
 static app_config_t s_cfg;
@@ -167,6 +171,10 @@ static void enter_state(app_state_t state, uint32_t timeout_ms)
 
 static void go_idle(void)
 {
+    /* Only offer on-device product search when the connected server advertises
+     * the products/{id} capability (apiVersion >= 2); otherwise the affordance
+     * would lead to a 404. Refreshed from the last ping on every return to idle. */
+    ui_set_search_available(api_server_api_version() >= 2);
     ui_show_idle();
     enter_state(APP_IDLE, 0);
 }
@@ -362,6 +370,22 @@ static void handle_link(int product_id)
     show_product(&product);
 }
 
+/* Home-screen search pick: no barcode to link, just fetch the full product and
+ * show it exactly as a scan would. */
+static void handle_pick_product(int product_id)
+{
+    ui_show_saving();
+
+    char err[API_ERR_LEN];
+    api_product_t product;
+    esp_err_t ret = api_get_product(product_id, &product, err);
+    if (ret != ESP_OK) {
+        show_error(err);
+        return;
+    }
+    show_product(&product);
+}
+
 static void handle_create(const char *name)
 {
     if (name[0] == '\0') {
@@ -445,6 +469,9 @@ static void handle_ui(const ui_event_t *evt)
         handle_create(evt->text);
         break;
     case UI_EVT_OPEN_SEARCH:
+        /* Remember whether search was opened from idle (show on pick) or from the
+         * unknown-barcode flow (link s_scan.barcode on pick). */
+        s_search_from_idle = (s_state == APP_IDLE);
         ui_show_search();
         enter_state(APP_SEARCH, 2 * SCREEN_TIMEOUT_MS);
         break;
@@ -452,7 +479,11 @@ static void handle_ui(const ui_event_t *evt)
         handle_search_query(evt->text);
         break;
     case UI_EVT_SEARCH_PICK:
-        handle_link(evt->product_id);
+        if (s_search_from_idle) {
+            handle_pick_product(evt->product_id);
+        } else {
+            handle_link(evt->product_id);
+        }
         break;
     case UI_EVT_OPEN_SETTINGS:
         show_settings();
