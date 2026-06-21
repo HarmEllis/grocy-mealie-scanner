@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-21
+
+This release makes OTA updates easier to recover and verify from the device
+itself, while tightening up settings-screen behavior and layout for longer
+localized strings.
+
+### Added
+
+- Manual "check for updates" action in settings, so users can trigger an OTA
+  release check without waiting for the periodic background check.
+
+### Fixed
+
+- Increased OTA HTTP receive buffers so GitHub release downloads complete
+  reliably.
+- Preserved the settings scroll position across UI rebuilds, including after an
+  update check changes settings-screen state.
+- Prevented longer translated UI labels and product quantity/unit text from
+  overlapping or overflowing their containers.
+
 ## [0.1.0] - 2026-06-21
 
 This release adds automatic over-the-air firmware updates and a much sturdier
@@ -77,6 +97,7 @@ flasher, and the first device API contract for grocy-mealie-sync.
   WiFi setup requests, URL truncation, invalid barcode lengths, stale timeout
   events, and mismatched create/link product response shapes.
 
-[Unreleased]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.0.1...v0.1.0
 [0.0.1]: https://github.com/HarmEllis/grocy-mealie-scanner/releases/tag/v0.0.1
