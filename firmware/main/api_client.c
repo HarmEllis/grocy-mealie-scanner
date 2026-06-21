@@ -100,20 +100,25 @@ static esp_err_t request_json(const char *method, const char *path, const char *
         .user_data = &acc,
         .crt_bundle_attach = NULL, /* set below only for https */
     };
-    /* TLS trust selection for https (see s_ca_pem/s_insecure above). A custom CA
-     * takes precedence; "trust any" leaves no CA at all so esp-tls sets
-     * MBEDTLS_SSL_VERIFY_NONE (requires CONFIG_ESP_TLS_SKIP_SERVER_CERT_VERIFY). */
+    /* TLS trust selection for https (see s_ca_pem/s_insecure above). "Trust any"
+     * is an explicit override and wins over any stored CA: it leaves no CA at all
+     * so esp-tls sets MBEDTLS_SSL_VERIFY_NONE (requires
+     * CONFIG_ESP_TLS_SKIP_SERVER_CERT_VERIFY). This also lets the user recover
+     * from a CA that mbedtls cannot parse (e.g. a critical extension it does not
+     * support) without first clearing the stored PEM. Otherwise a custom CA is
+     * used if present, else the bundled Mozilla store. */
     if (strncmp(url, "https://", 8) == 0) {
-        if (s_ca_pem != NULL) {
+        if (s_insecure) {
+            /* trust any -> no CA configured at all */
+        } else if (s_ca_pem != NULL) {
             cfg.cert_pem = s_ca_pem;
             cfg.cert_len = 0; /* NUL-terminated */
-        } else if (!s_insecure) {
+        } else {
 #if CONFIG_MBEDTLS_CERTIFICATE_BUNDLE
             extern esp_err_t esp_crt_bundle_attach(void *conf);
             cfg.crt_bundle_attach = esp_crt_bundle_attach;
 #endif
         }
-        /* else: trust any -> no CA configured at all */
     }
 
     esp_http_client_handle_t client = esp_http_client_init(&cfg);

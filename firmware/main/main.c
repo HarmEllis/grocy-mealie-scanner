@@ -189,6 +189,11 @@ static void show_error(const char *message)
 static void show_connection_error(const char *message)
 {
     status_led_flash(STATUS_LED_CORAL);
+    /* Park the scanner while we are not connected: a scan is useless without the
+     * API, and a lit aiming light on the error screen is misleading. The gate
+     * reopens in try_connect() once the API answers. (At boot this runs before
+     * gm67_init(), which then honours the closed gate; see gm67_task.) */
+    gm67_set_scanning(false);
     ui_show_connection_error(message);
     /* Re-arm the screen timer as an auto-retry tick rather than a fall-to-idle. */
     enter_state(APP_CONN_ERROR, CONN_RETRY_MS);
@@ -208,6 +213,9 @@ static void try_connect(void)
     }
     ui_show_connecting(tr("reconnecting"));
     if (api_ping(err) == ESP_OK) {
+        /* Online again: reopen the scanner gate that show_connection_error()
+         * closed before returning to idle. */
+        gm67_set_scanning(true);
         go_idle();
     } else {
         show_connection_error(err);
@@ -736,6 +744,14 @@ void app_main(void)
     if (!storage_is_provisioned(&s_cfg) || setup_requested) {
         char ap_ssid[16];
         ui_show_connecting(tr("starting_setup"));
+        /* Keep the scanner dark for the whole setup portal: close the gate, then
+         * bring up the reader so gm67_task asserts SCAN_DISABLE on the hardware
+         * (the enable/disable state persists in the scanner's NVS, so we must
+         * actively turn it off rather than rely on a prior session). The portal
+         * reboots the device when done, so this is the only gm67_init() on the
+         * provisioning path. */
+        gm67_set_scanning(false);
+        ESP_ERROR_CHECK(gm67_init(on_scan, SCAN_DEBOUNCE_MS));
         ESP_ERROR_CHECK(wifi_prov_run(&s_cfg, ap_ssid, sizeof(ap_ssid)));
         ui_show_provisioning(ap_ssid, s_cfg.ap_pass);
         /* The portal's POST handler saves the config and reboots. */

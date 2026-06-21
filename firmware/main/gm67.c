@@ -142,11 +142,19 @@ static void gm67_task(void *arg)
     memset(&rt, 0, sizeof(rt));
     gm67_demux_init(&s_demux, on_text, NULL, &rt);
 
-    /* Re-enable the scan engine.  SCAN_DISABLE (sent on screen sleep) persists
-     * in the scanner's NVS, so without this the LED stays off after a power cycle
-     * where the last session ended with the screen asleep. */
-    uart_write_bytes(BOARD_GM67_UART_NUM, gm67_cmd_scan_enable.bytes,
-                     gm67_cmd_scan_enable.len);
+    /* Drive the scan engine to match the software gate.  SCAN_ENABLE/DISABLE
+     * persists in the scanner's NVS, so we must assert the desired state on every
+     * boot: without it the LED state from the last session (e.g. screen asleep)
+     * carries over.  s_scanning_enabled is normally true, but a caller may close
+     * the gate before gm67_init() (boot landing on the connection-error/setup
+     * screen) — honour that so the scanner stays dark until we are online. */
+    if (atomic_load(&s_scanning_enabled)) {
+        uart_write_bytes(BOARD_GM67_UART_NUM, gm67_cmd_scan_enable.bytes,
+                         gm67_cmd_scan_enable.len);
+    } else {
+        uart_write_bytes(BOARD_GM67_UART_NUM, gm67_cmd_scan_disable.bytes,
+                         gm67_cmd_scan_disable.len);
+    }
     vTaskDelay(pdMS_TO_TICKS(50));
     uart_flush_input(BOARD_GM67_UART_NUM);
     s_ready = true;
