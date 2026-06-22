@@ -82,6 +82,15 @@ esp_err_t api_create_product(const char *name, const char *barcode,
                              api_product_t *out, char *errbuf);
 esp_err_t api_link_barcode(int product_id, const char *barcode,
                            api_product_t *out, char *errbuf);
+/* Fetch a full product by id (home-screen search -> pick, shown as if scanned).
+ * The server response root is the product, same shape as a scan "found". */
+esp_err_t api_get_product(int product_id, api_product_t *out, char *errbuf);
+
+/* Device API capability version last advertised by the server on /ping
+ * (defaults to 1 until a successful ping reports a newer value). The idle
+ * screen gates the product-search affordance on this so an out-of-date server
+ * never shows a feature that would 404. */
+int api_server_api_version(void);
 
 #if CONFIG_GMS_DEMO_MODE
 /* Demo build only (api_client_demo.c): returns the next synthetic barcode in

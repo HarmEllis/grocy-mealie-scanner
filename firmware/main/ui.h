@@ -47,6 +47,11 @@ esp_err_t ui_init(ui_event_cb_t cb);
 /* Status bar (every screen): connection dot + label, clock from time(). */
 void ui_set_connected(bool connected);
 
+/* Gate the idle product-search affordance: pass true only when the connected
+ * server advertises the products/{id} capability (apiVersion >= 2). Takes effect
+ * on the next ui_show_idle(); set it before returning to idle. */
+void ui_set_search_available(bool available);
+
 /* Screens. Safe to call from any task (locks LVGL internally). */
 void ui_show_provisioning(const char *ap_ssid, const char *ap_pass);
 void ui_show_connecting(const char *message);

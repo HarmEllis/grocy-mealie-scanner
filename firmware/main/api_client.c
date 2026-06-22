@@ -27,6 +27,10 @@ static char s_auth_header[STORAGE_TOKEN_LEN + 8];
  *   else             -> verify against the bundled Mozilla CA store */
 static char *s_ca_pem;
 static bool s_insecure;
+/* Device API capability version advertised by the server on /ping. Defaults to
+ * 1 (the pre-products/{id} contract) until a successful ping reports otherwise,
+ * so features gated on a newer server stay hidden against old/unknown servers. */
+static int s_server_api_version = 1;
 
 void api_client_init(const app_config_t *cfg)
 {
@@ -205,12 +209,20 @@ esp_err_t api_ping(char *errbuf)
                                      &status, &json, errbuf),
                         TAG, "ping");
     bool ok = status == 200 && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(json, "ok"));
-    if (!ok) {
+    if (ok) {
+        /* Absent on pre-v2 servers -> keep the conservative default of 1. */
+        s_server_api_version = (int)json_get_num(json, "apiVersion", 1);
+    } else {
         take_server_error(json, errbuf,
                           status == 401 ? tr("invalid_device_token") : tr("ping_failed"));
     }
     cJSON_Delete(json);
     return ok ? ESP_OK : ESP_FAIL;
+}
+
+int api_server_api_version(void)
+{
+    return s_server_api_version;
 }
 
 esp_err_t api_scan(const char *barcode, api_scan_result_t *out, char *errbuf)
@@ -415,4 +427,24 @@ esp_err_t api_link_barcode(int product_id, const char *barcode,
     char body[96];
     snprintf(body, sizeof(body), "{\"barcode\":\"%s\"}", barcode);
     return post_for_product(path, body, out, errbuf, tr("link_failed"));
+}
+
+esp_err_t api_get_product(int product_id, api_product_t *out, char *errbuf)
+{
+    char path[64];
+    snprintf(path, sizeof(path), "/api/device/v1/products/%d", product_id);
+
+    int status = 0;
+    cJSON *json = NULL;
+    ESP_RETURN_ON_ERROR(request_json("GET", path, NULL, &status, &json, errbuf),
+                        TAG, "get_product");
+    if (status != 200) {
+        take_server_error(json, errbuf, tr("lookup_failed"));
+        cJSON_Delete(json);
+        return ESP_FAIL;
+    }
+    /* The response root is the product, same flat shape as scan "found". */
+    parse_product(json, out);
+    cJSON_Delete(json);
+    return ESP_OK;
 }
