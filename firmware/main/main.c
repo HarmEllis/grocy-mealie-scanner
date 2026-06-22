@@ -237,7 +237,7 @@ static void show_product(const api_product_t *product)
 {
     status_led_flash(STATUS_LED_GREEN);
     s_product = *product;
-    ui_set_last_scan(product->name);
+    ui_set_last_scan(product->name, product->id);
     ui_show_product(product);
     enter_state(APP_PRODUCT, SCREEN_TIMEOUT_MS);
 }
@@ -388,7 +388,7 @@ static void handle_action(api_action_t action)
         show_error(err); /* incl. 409 insufficient stock with server text */
         return;
     }
-    ui_set_last_scan(result.product_name);
+    ui_set_last_scan(result.product_name, s_product.id);
     ui_show_flash(&result);
     enter_state(APP_FLASH, FLASH_DWELL_MS);
 }
@@ -520,6 +520,11 @@ static void handle_ui(const ui_event_t *evt)
             handle_pick_product(evt->product_id);
         } else {
             handle_link(evt->product_id);
+        }
+        break;
+    case UI_EVT_LAST_SCAN_TAP:
+        if (s_state == APP_IDLE) {
+            handle_pick_product(evt->product_id);
         }
         break;
     case UI_EVT_OPEN_SETTINGS:
