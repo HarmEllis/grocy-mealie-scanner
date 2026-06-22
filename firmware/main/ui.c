@@ -43,6 +43,7 @@ static bool s_status_shows_conn; /* true only while the status bar shows Connect
 static bool s_search_available;  /* idle shows the product-search icon only when set */
 static char s_last_scan_name[API_NAME_LEN];
 static char s_last_scan_time[8];
+static int  s_last_scan_id;      /* product id for re-opening the product page */
 static lv_timer_t *s_clock_timer;
 
 /* Screen sleep state.
@@ -174,6 +175,12 @@ void ui_cancel_sleep(void)
 /* Defined further down with the other not-found/search callbacks. */
 static void dismiss_cb(lv_event_t *e);
 static void open_search_cb(lv_event_t *e);
+
+static void last_scan_tap_cb(lv_event_t *e)
+{
+    (void)e;
+    emit(UI_EVT_LAST_SCAN_TAP, 0, s_last_scan_id, NULL);
+}
 
 static void open_settings_cb(lv_event_t *e)
 {
@@ -427,6 +434,16 @@ void ui_show_idle(void)
         lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
         lv_obj_align(name, LV_ALIGN_LEFT_MID, 52, 0);
 
+        /* When the server supports product lookup (apiVersion >= 2), make the
+         * name tappable so the user can re-open the product page. */
+        if (s_search_available && s_last_scan_id > 0) {
+            lv_obj_set_style_text_color(name, COL_AMBER, 0);
+            lv_obj_add_flag(name, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_add_event_cb(name, last_scan_tap_cb, LV_EVENT_CLICKED, NULL);
+            /* Extend the hit area so the small label is easy to tap. */
+            lv_obj_set_ext_click_area(name, 8);
+        }
+
         lv_obj_t *when = lv_label_create(footer);
         lv_label_set_text(when, s_last_scan_time);
         lv_obj_set_style_text_font(when, &gms_font_10, 0);
@@ -436,9 +453,10 @@ void ui_show_idle(void)
     lvgl_port_unlock();
 }
 
-void ui_set_last_scan(const char *name)
+void ui_set_last_scan(const char *name, int product_id)
 {
     strlcpy(s_last_scan_name, name, sizeof(s_last_scan_name));
+    s_last_scan_id = product_id;
     time_t now = time(NULL);
     struct tm tm;
     localtime_r(&now, &tm);

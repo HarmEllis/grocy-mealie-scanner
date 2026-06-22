@@ -14,6 +14,7 @@ typedef enum {
     UI_EVT_OPEN_SEARCH,
     UI_EVT_SEARCH_QUERY,     /* arg.text */
     UI_EVT_SEARCH_PICK,      /* arg.product_id */
+    UI_EVT_LAST_SCAN_TAP,    /* last-scan name tapped on idle; arg.product_id */
     UI_EVT_DISMISS,          /* "scan again" / flash tapped / back to idle */
     UI_EVT_OPEN_SETTINGS,    /* gear tapped on the idle status bar */
     UI_EVT_CYCLE_BEEP,           /* scanner-beep row tapped on the settings screen */
@@ -57,7 +58,7 @@ void ui_set_search_available(bool available);
 void ui_show_provisioning(const char *ap_ssid, const char *ap_pass);
 void ui_show_connecting(const char *message);
 void ui_show_idle(void);
-void ui_set_last_scan(const char *name); /* idle footer, remembers time */
+void ui_set_last_scan(const char *name, int product_id); /* idle footer */
 void ui_show_product(const api_product_t *product);
 void ui_show_saving(void);
 void ui_show_flash(const api_action_result_t *result);
