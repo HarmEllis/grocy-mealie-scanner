@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-22
+
+Idle-screen usability release: product search and last-scan shortcuts let you
+reach any product page without scanning a barcode, scan lookups are more
+resilient to transient network issues, and a new WiFi power-save toggle trades
+battery for lower latency.
+
+### Added
+
+- On-device product search from the idle screen, gated on the server's
+  `apiVersion >= 2` capability: a search icon on the status bar opens the
+  keyboard search, and picking a result shows the product page without linking
+  a barcode.
+- `GET /api/device/v1/products/{id}` endpoint in the device API contract for
+  fetching a single product by id.
+- Tappable last-scan shortcut on the idle screen: the last-scanned product name
+  in the footer is highlighted in amber and tappable when the server supports
+  `apiVersion >= 2`, re-opening the product page for quick repeat actions
+  (purchase, consume, open, shopping list) without rescanning the barcode.
+- WiFi power-save toggle in settings: disabling modem sleep reduces HTTP
+  latency at the cost of higher power draw, helpful on networks where the
+  ESP32 WiFi sleep handshake adds noticeable lag to scan lookups.
+
+### Changed
+
+- Scan lookups now retry transport-level failures (TLS, TCP, DNS) up to
+  3 times with escalating back-off (300 ms, 800 ms), only when the failed
+  attempt completed quickly (< 2.5 s). Application errors (4xx/5xx) are never
+  retried.
+- Transport failures on scan now route to the sticky connection-error screen
+  (with tap-to-retry and auto-retry) instead of a dismissable one-shot error,
+  matching the boot connection-error behaviour.
+
+### Fixed
+
+- Scan error handling now distinguishes transport failures from server errors,
+  so network-level issues surface the correct retry UI instead of a dead-end
+  error screen.
+
 ## [0.2.0] - 2026-06-21
 
 This release makes OTA updates easier to recover and verify from the device
@@ -97,7 +136,8 @@ flasher, and the first device API contract for grocy-mealie-sync.
   WiFi setup requests, URL truncation, invalid barcode lengths, stale timeout
   events, and mismatched create/link product response shapes.
 
-[Unreleased]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.0.1...v0.1.0
 [0.0.1]: https://github.com/HarmEllis/grocy-mealie-scanner/releases/tag/v0.0.1
