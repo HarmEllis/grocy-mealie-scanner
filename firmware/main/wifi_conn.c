@@ -57,9 +57,21 @@ static esp_err_t wifi_common_init(void)
     return ESP_OK;
 }
 
+esp_err_t wifi_conn_set_power_save(bool enabled)
+{
+    esp_err_t err = esp_wifi_set_ps(enabled ? WIFI_PS_MIN_MODEM : WIFI_PS_NONE);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "power save %s", enabled ? "enabled" : "disabled");
+    } else {
+        ESP_LOGW(TAG, "power save update failed: %s", esp_err_to_name(err));
+    }
+    return err;
+}
+
 esp_err_t wifi_conn_start(const app_config_t *cfg, uint32_t timeout_ms)
 {
     ESP_RETURN_ON_ERROR(wifi_common_init(), TAG, "common");
+    (void)wifi_conn_set_power_save(cfg->wifi_power_save);
     if (!s_sta_started) {
         esp_netif_create_default_wifi_sta();
         ESP_RETURN_ON_ERROR(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID,

@@ -45,6 +45,9 @@ static const char *TAG = "main";
 #define CONN_RETRY_MS         5000   /* connection-error screen auto-retry cadence */
 #define FACTORY_RESET_HOLD_MS 5000
 #define TOUCH_CAL_RESULT_MS   1500
+#define SCAN_FAST_RETRY_MS    2500
+#define SCAN_RETRY_DELAY_1_MS 300
+#define SCAN_RETRY_DELAY_2_MS 800
 
 typedef enum {
     APP_EVT_SCAN,
@@ -183,7 +186,7 @@ static void show_settings(void)
 {
     ui_show_settings(s_cfg.beep_level, s_cfg.light_enabled, s_cfg.language,
                      s_cfg.screen_timeout_seconds, s_cfg.scanner_light,
-                     s_cfg.collimation);
+                     s_cfg.collimation, s_cfg.wifi_power_save);
     enter_state(APP_SETTINGS, SCREEN_TIMEOUT_MS);
 }
 
@@ -323,12 +326,46 @@ static void handle_scan(const char *barcode)
     }
 
     ESP_LOGI(TAG, "scan: %s", barcode);
+#if !CONFIG_GMS_DEMO_MODE
+    if (!wifi_conn_is_connected()) {
+        show_connection_error(tr("wifi_disconnected"));
+        return;
+    }
+#endif
     ui_show_connecting(tr("looking_up"));
 
     char err[API_ERR_LEN];
-    esp_err_t ret = api_scan(barcode, &s_scan, err);
+    esp_err_t ret = ESP_FAIL;
+    bool last_transport_error = false;
+    for (int attempt = 1; attempt <= 3; attempt++) {
+        int64_t started = esp_timer_get_time();
+        bool wifi_connected = wifi_conn_is_connected();
+        ret = api_scan(barcode, &s_scan, err);
+        int elapsed_ms = (int)((esp_timer_get_time() - started) / 1000);
+        int status = api_last_http_status();
+        last_transport_error = api_error_is_transport(ret);
+        ESP_LOGI(TAG, "scan attempt %d: ret=%s status=%d elapsed=%dms wifi=%s",
+                 attempt, esp_err_to_name(ret), status, elapsed_ms,
+                 wifi_connected ? "connected" : "disconnected");
+
+        if (ret == ESP_OK) {
+            if (attempt > 1) {
+                ESP_LOGI(TAG, "scan succeeded on attempt %d", attempt);
+            }
+            break;
+        }
+        if (!last_transport_error || elapsed_ms >= SCAN_FAST_RETRY_MS || attempt == 3) {
+            break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(attempt == 1 ? SCAN_RETRY_DELAY_1_MS
+                                              : SCAN_RETRY_DELAY_2_MS));
+    }
     if (ret != ESP_OK) {
-        show_error(err);
+        if (last_transport_error) {
+            show_connection_error(err);
+        } else {
+            show_error(err);
+        }
         return;
     }
     if (s_scan.status == API_SCAN_FOUND) {
@@ -498,6 +535,12 @@ static void handle_ui(const ui_event_t *evt)
         s_cfg.light_enabled = !s_cfg.light_enabled;
         storage_save_settings(&s_cfg);
         status_led_set_enabled(s_cfg.light_enabled);
+        show_settings();
+        break;
+    case UI_EVT_TOGGLE_WIFI_PS:
+        s_cfg.wifi_power_save = !s_cfg.wifi_power_save;
+        storage_save_settings(&s_cfg);
+        wifi_conn_set_power_save(s_cfg.wifi_power_save);
         show_settings();
         break;
     case UI_EVT_TOGGLE_LANGUAGE:

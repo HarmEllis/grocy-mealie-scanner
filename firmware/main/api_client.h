@@ -75,6 +75,8 @@ void api_client_init(const app_config_t *cfg);
  * the server's error message in errbuf. */
 esp_err_t api_ping(char *errbuf);
 esp_err_t api_scan(const char *barcode, api_scan_result_t *out, char *errbuf);
+int api_last_http_status(void);
+bool api_error_is_transport(esp_err_t err);
 esp_err_t api_action(int product_id, api_action_t action, api_action_result_t *out,
                      char *errbuf);
 esp_err_t api_search(const char *query, api_search_result_t *out, char *errbuf);

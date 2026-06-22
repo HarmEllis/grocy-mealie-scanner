@@ -27,6 +27,7 @@ static char s_auth_header[STORAGE_TOKEN_LEN + 8];
  *   else             -> verify against the bundled Mozilla CA store */
 static char *s_ca_pem;
 static bool s_insecure;
+static int s_last_http_status;
 /* Device API capability version advertised by the server on /ping. Defaults to
  * 1 (the pre-products/{id} contract) until a successful ping reports otherwise,
  * so features gated on a newer server stay hidden against old/unknown servers. */
@@ -84,6 +85,7 @@ static esp_err_t request_json(const char *method, const char *path, const char *
                               int *status_out, cJSON **json_out, char *errbuf)
 {
     char url[MAX_URL];
+    s_last_http_status = 0;
     int url_len = snprintf(url, sizeof(url), "%s%s", s_base_url, path);
     if (url_len < 0 || url_len >= (int)sizeof(url)) {
         set_err(errbuf, tr("url_too_long"));
@@ -143,6 +145,7 @@ static esp_err_t request_json(const char *method, const char *path, const char *
 
     esp_err_t err = esp_http_client_perform(client);
     int status = esp_http_client_get_status_code(client);
+    s_last_http_status = status;
     esp_http_client_cleanup(client);
 
     if (err != ESP_OK) {
@@ -223,6 +226,20 @@ esp_err_t api_ping(char *errbuf)
 int api_server_api_version(void)
 {
     return s_server_api_version;
+}
+
+int api_last_http_status(void)
+{
+    return s_last_http_status;
+}
+
+bool api_error_is_transport(esp_err_t err)
+{
+    return err != ESP_OK &&
+           err != ESP_FAIL &&
+           err != ESP_ERR_INVALID_ARG &&
+           err != ESP_ERR_INVALID_RESPONSE &&
+           err != ESP_ERR_NO_MEM;
 }
 
 esp_err_t api_scan(const char *barcode, api_scan_result_t *out, char *errbuf)

@@ -95,6 +95,16 @@ int api_server_api_version(void)
     return 2; /* demo server supports the full contract incl. products/{id} */
 }
 
+int api_last_http_status(void)
+{
+    return 0;
+}
+
+bool api_error_is_transport(esp_err_t err)
+{
+    return err != ESP_OK && err != ESP_FAIL;
+}
+
 esp_err_t api_scan(const char *barcode, api_scan_result_t *out, char *errbuf)
 {
     memset(out, 0, sizeof(*out));

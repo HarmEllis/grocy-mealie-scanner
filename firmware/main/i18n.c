@@ -48,6 +48,8 @@
     X("decode_tone", "GM67 decode tone", "GM67 decodeertoon") \
     X("status_light", "Status light", "Statuslamp") \
     X("result_flash", "WS2812 result flash", "WS2812 resultaat") \
+    X("wifi_power_save", "WiFi power save", "WiFi-spaarstand") \
+    X("lower_wifi_power", "Lower power, higher latency", "Lager verbruik, hogere vertraging") \
     X("language", "Language", "Taal") \
     X("english", "English", "Engels") \
     X("dutch", "Dutch", "Nederlands") \

@@ -18,6 +18,7 @@ typedef enum {
     UI_EVT_OPEN_SETTINGS,    /* gear tapped on the idle status bar */
     UI_EVT_CYCLE_BEEP,           /* scanner-beep row tapped on the settings screen */
     UI_EVT_TOGGLE_LIGHT,         /* status-light row tapped on the settings screen */
+    UI_EVT_TOGGLE_WIFI_PS,       /* WiFi power-save row tapped on the settings screen */
     UI_EVT_TOGGLE_LANGUAGE,      /* language row tapped on the settings screen */
     UI_EVT_CYCLE_TIMEOUT,        /* screen-timeout row tapped on the settings screen */
     UI_EVT_CYCLE_SCANNER_LIGHT,  /* scanner light row tapped on the settings screen */
@@ -71,7 +72,7 @@ void ui_show_error(const char *message);
 void ui_show_connection_error(const char *message);
 void ui_show_settings(uint8_t beep_level, bool light, const char *language,
                       uint32_t timeout_seconds, uint8_t scanner_light,
-                      uint8_t collimation);
+                      uint8_t collimation, bool wifi_power_save);
 void ui_show_touch_calibration(void);
 void ui_touch_calibration_set_target(uint8_t target_index);
 void ui_show_touch_calibration_result(bool success, bool save_failed);
