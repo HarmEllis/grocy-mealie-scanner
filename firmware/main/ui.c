@@ -1127,6 +1127,12 @@ static void toggle_light_cb(lv_event_t *e)
     emit(UI_EVT_TOGGLE_LIGHT, 0, 0, NULL);
 }
 
+static void toggle_wifi_ps_cb(lv_event_t *e)
+{
+    (void)e;
+    emit(UI_EVT_TOGGLE_WIFI_PS, 0, 0, NULL);
+}
+
 static void cycle_scanner_light_cb(lv_event_t *e)
 {
     (void)e;
@@ -1348,7 +1354,7 @@ static void make_navigation_row(lv_obj_t *parent, int y, const char *title,
 
 void ui_show_settings(uint8_t beep_level, bool light, const char *language,
                       uint32_t timeout_seconds, uint8_t scanner_light,
-                      uint8_t collimation)
+                      uint8_t collimation, bool wifi_power_save)
 {
     lvgl_port_lock(0);
     /* Preserve the scroll offset across rebuilds: toggling a setting re-runs
@@ -1422,13 +1428,15 @@ void ui_show_settings(uint8_t beep_level, bool light, const char *language,
     make_language_row(body, 298, language);
     make_timeout_row(body, 354, timeout_seconds);
     make_navigation_row(body, 410, tr("touch_calibrate"), open_touch_cal_cb);
-    make_navigation_row(body, 466, tr("wifi_api_setup"), open_setup_cb);
+    make_settings_row(body, 466, tr("wifi_power_save"), tr("lower_wifi_power"),
+                      wifi_power_save, toggle_wifi_ps_cb);
+    make_navigation_row(body, 530, tr("wifi_api_setup"), open_setup_cb);
 
-    int note_y = 522;
+    int note_y = 586;
 #if !CONFIG_GMS_DEMO_MODE
     /* OTA lives only in production builds (ota_update.c is excluded from demo). */
-    make_navigation_row(body, 522, tr("ota_check"), check_update_cb);
-    note_y = 578;
+    make_navigation_row(body, 586, tr("ota_check"), check_update_cb);
+    note_y = 642;
 #endif
 
     lv_obj_t *note = lv_label_create(body);

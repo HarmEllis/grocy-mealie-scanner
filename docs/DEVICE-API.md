@@ -86,6 +86,10 @@ flow):
 - `suggestedMatches` fuzzy-matches the external name (when present) and the
   raw barcode against all Grocy products via the existing `fuzzy-match`
   helpers; at most 5 entries, best first, score in `[0,1]`.
+- Grocy barcode lookup is capped server-side below the firmware HTTP timeout;
+  an upstream timeout returns `504 {"error":"Grocy barcode lookup timed out after 6500ms"}`.
+- `onShoppingList` is best-effort. Slow or unreachable Mealie shopping-list
+  checks must fall back to `false` instead of delaying the product screen.
 - Invalid barcode (non `[0-9A-Za-z_-]{4,64}`) → `400`.
 
 ### `POST /api/device/v1/products/{id}/action`
@@ -212,8 +216,9 @@ in the error body: `{"error":"…","product":{"id":42,"name":"…"}}`.
   on a memory-constrained device.
 - Every state the UI can land in after a network call must be derivable from
   a single response (no follow-up requests needed to render).
-- All endpoints must respond within 5 s (the firmware request timeout is
-  8 s); external lookups are capped server-side at 3 s.
-- The device does not auto-retry: every request (GET or POST) is sent exactly
-  once and the user re-taps on failure, so duplicate-action protection
-  server-side is not required for v1.
+- Endpoints must respond before the firmware request timeout (8 s). The scan
+  path caps Grocy barcode lookup at 6.5 s, OpenFoodFacts lookup at 3 s, and
+  Mealie shopping-list status at 1.2 s.
+- The device may retry fast transport failures for scan lookups only. Action
+  requests are sent exactly once and the user re-taps on failure, so
+  duplicate-action protection server-side is not required for v1.

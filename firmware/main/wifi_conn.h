@@ -11,6 +11,10 @@ esp_err_t wifi_conn_start(const app_config_t *cfg, uint32_t timeout_ms);
 
 bool wifi_conn_is_connected(void);
 
+/* Apply WiFi modem sleep. Enabled saves power; disabled can reduce latency on
+ * some access points. Safe after WiFi init; returns an ESP error otherwise. */
+esp_err_t wifi_conn_set_power_save(bool enabled);
+
 /* Provisioning portal: SoftAP "scanner-XXXX" + captive DNS + a config form
  * at http://192.168.4.1. Returns the SSID actually used via `ap_ssid_out`
  * (cap >= 16). Blocks forever: the portal saves the submitted config and
