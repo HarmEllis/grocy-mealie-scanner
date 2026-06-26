@@ -33,8 +33,12 @@ static void sta_event_handler(void *arg, esp_event_base_t base, int32_t id, void
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
+        wifi_event_sta_disconnected_t *e = (wifi_event_sta_disconnected_t *)data;
         xEventGroupClearBits(s_events, CONNECTED_BIT);
-        ESP_LOGW(TAG, "disconnected, retrying");
+        /* Reason codes (esp_wifi_types.h): 15 = 4WAY_HANDSHAKE_TIMEOUT (usually
+         * a wrong password), 201 = NO_AP_FOUND, 202 = AUTH_FAIL, 205 =
+         * CONNECTION_FAIL. Logging it turns a silent retry loop into a diagnosis. */
+        ESP_LOGW(TAG, "disconnected (reason %u), retrying", e->reason);
         vTaskDelay(pdMS_TO_TICKS(1000));
         esp_wifi_connect();
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
@@ -53,6 +57,18 @@ static esp_err_t wifi_common_init(void)
         wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
         ESP_RETURN_ON_ERROR(esp_wifi_init(&cfg), TAG, "wifi init");
         ESP_RETURN_ON_ERROR(esp_wifi_set_storage(WIFI_STORAGE_RAM), TAG, "wifi storage");
+
+        /* Regulatory domain. With the world-safe default ("01") channels 12-13
+         * are passive-only, so an active scan misses a router on auto-channel
+         * that lands on 13 — it then shows up as repeated auth failures. Apply
+         * the build-stamped country with 802.11d (the trailing `true`) so the
+         * device still adapts to the AP's advertised domain. Non-fatal: an
+         * unsupported code must not abort boot before the portal is reachable. */
+        esp_err_t cc_err = esp_wifi_set_country_code(CONFIG_GMS_WIFI_COUNTRY, true);
+        if (cc_err != ESP_OK) {
+            ESP_LOGW(TAG, "set_country_code(%s) failed: %s — using driver default",
+                     CONFIG_GMS_WIFI_COUNTRY, esp_err_to_name(cc_err));
+        }
     }
     return ESP_OK;
 }
@@ -85,7 +101,16 @@ esp_err_t wifi_conn_start(const app_config_t *cfg, uint32_t timeout_ms)
     wifi_config_t sta = { 0 };
     strlcpy((char *)sta.sta.ssid, cfg->wifi_ssid, sizeof(sta.sta.ssid));
     strlcpy((char *)sta.sta.password, cfg->wifi_pass, sizeof(sta.sta.password));
+    /* Minimum accepted security. WPA3_PSK ranks above WPA2_PSK, so this still
+     * permits a WPA3 or WPA2/WPA3-mixed AP; it only rejects open/WEP/WPA1. */
     sta.sta.threshold.authmode = cfg->wifi_pass[0] ? WIFI_AUTH_WPA2_PSK : WIFI_AUTH_OPEN;
+    /* PMF capable but not required: WPA3-SAE mandates Protected Management
+     * Frames (a WPA3-only or PMF-required AP otherwise fails in the auth phase),
+     * while staying compatible with plain WPA2 APs that do not offer PMF.
+     * Accept both SAE PWE derivations so H2E-only WPA3 routers also connect. */
+    sta.sta.pmf_cfg.capable = true;
+    sta.sta.pmf_cfg.required = false;
+    sta.sta.sae_pwe_h2e = WPA3_SAE_PWE_BOTH;
 
     ESP_RETURN_ON_ERROR(esp_wifi_set_mode(WIFI_MODE_STA), TAG, "mode");
     ESP_RETURN_ON_ERROR(esp_wifi_set_config(WIFI_IF_STA, &sta), TAG, "config");
@@ -373,15 +398,21 @@ esp_err_t wifi_prov_run(app_config_t *cfg, char *ap_ssid_out, size_t ap_ssid_cap
     strlcpy((char *)ap.ap.ssid, ap_ssid_out, sizeof(ap.ap.ssid));
     ap.ap.ssid_len = strlen(ap_ssid_out);
     strlcpy((char *)ap.ap.password, cfg->ap_pass, sizeof(ap.ap.password));
+    ap.ap.channel = 1;
     ap.ap.max_connection = 2;
     ap.ap.authmode = WIFI_AUTH_WPA2_PSK;
 
     ESP_RETURN_ON_ERROR(esp_wifi_set_mode(WIFI_MODE_AP), TAG, "ap mode");
     ESP_RETURN_ON_ERROR(esp_wifi_set_config(WIFI_IF_AP, &ap), TAG, "ap config");
+    /* 11b/g only (no 11n) for the SoftAP, applied BEFORE esp_wifi_start(): an
+     * S3 SoftAP that comes up in 11n logs as "started" but is undetectable by
+     * many phones/PCs (ESP-IDF #13508; AMPDU is also disabled in
+     * sdkconfig.defaults). Setting the protocol/bandwidth after start leaves the
+     * first beacons in 11n, so it must happen before the radio is started. */
+    ESP_RETURN_ON_ERROR(esp_wifi_set_bandwidth(WIFI_IF_AP, WIFI_BW_HT20), TAG, "ap bw");
+    ESP_RETURN_ON_ERROR(esp_wifi_set_protocol(WIFI_IF_AP,
+                            WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G), TAG, "ap proto");
     ESP_RETURN_ON_ERROR(esp_wifi_start(), TAG, "ap start");
-    /* 11b/g only: S3 SoftAP + AMPDU quirks make 11n undetectable for some
-     * phones (see sdkconfig.defaults). */
-    esp_wifi_set_protocol(WIFI_IF_AP, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G);
 
     ESP_RETURN_ON_ERROR(captive_dns_start(), TAG, "captive dns");
 

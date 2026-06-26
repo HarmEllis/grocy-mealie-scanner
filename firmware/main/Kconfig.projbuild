@@ -33,4 +33,18 @@ menu "Grocy-Mealie scanner"
             hour per public IP, so keep this generous. The default of 24 h is
             plenty for a home appliance; lower it only for testing.
 
+    config GMS_WIFI_COUNTRY
+        string "Default WiFi country code (regulatory domain)"
+        default "01"
+        help
+            Two-letter ISO country code applied via esp_wifi_set_country_code()
+            with 802.11d enabled, so the device also adapts to the AP's
+            advertised domain.
+
+            "01" is the world-safe default and ships legally anywhere, but it
+            makes channels 12-13 passive-only: a router on auto-channel that
+            lands on 13 is then only reachable passively and can show up as
+            repeated auth failures. Set a concrete region (e.g. "NL") to enable
+            channels 1-13 for active scan.
+
 endmenu

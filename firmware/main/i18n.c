@@ -61,6 +61,8 @@
     X("touch_calibrate", "Calibrate touch", "Touch kalibreren") \
     X("wifi_api_setup", "WiFi & API setup", "WiFi & API instellen") \
     X("opening_setup", "Opening setup...", "Setup openen...") \
+    X("wifi_recalibrate", "Recalibrate WiFi", "WiFi herkalibreren") \
+    X("recalibrating_wifi", "Recalibrating WiFi...", "WiFi herkalibreren...") \
     X("scanner", "SCANNER", "SCANNER") \
     X("beep_off", "Off", "Uit") \
     X("beep_low", "Low", "Laag") \

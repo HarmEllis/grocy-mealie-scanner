@@ -50,6 +50,11 @@ CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 # WiFi
 CONFIG_ESP_WIFI_SOFTAP_SUPPORT=y
 
+# Regulatory domain for this build: "NL" enables channels 1-13 for active scan
+# (the world-safe source default "01" leaves 12-13 passive-only). See
+# CONFIG_GMS_WIFI_COUNTRY in main/Kconfig.projbuild.
+CONFIG_GMS_WIFI_COUNTRY="NL"
+
 # USB-Serial-JTAG CDC as secondary log console (UART0 stays primary).
 CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG=y
 
