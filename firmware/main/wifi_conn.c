@@ -111,6 +111,13 @@ esp_err_t wifi_conn_start(const app_config_t *cfg, uint32_t timeout_ms)
     sta.sta.pmf_cfg.capable = true;
     sta.sta.pmf_cfg.required = false;
     sta.sta.sae_pwe_h2e = WPA3_SAE_PWE_BOTH;
+    /* Scan every channel and pick the strongest matching AP instead of the
+     * default fast-scan, which latches onto the FIRST AP carrying the SSID
+     * regardless of RSSI. In a mesh / multi-AP / repeater network fast-scan can
+     * keep retrying a weak or flaky AP (silent auth failures) while a phone
+     * roams to the better one — costs ~1-2 s extra on the first connect. */
+    sta.sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
+    sta.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
 
     ESP_RETURN_ON_ERROR(esp_wifi_set_mode(WIFI_MODE_STA), TAG, "mode");
     ESP_RETURN_ON_ERROR(esp_wifi_set_config(WIFI_IF_STA, &sta), TAG, "config");
