@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-27
+
+WiFi connectivity release: this hardens provisioning and station setup so the
+device reliably joins real-world networks (mesh, multi-AP, and routers stuck on
+the upper 2.4 GHz channels), makes the captive-portal SoftAP discoverable on the
+ESP32-S3, and adds a serial-free PHY recalibration recovery path.
+
+### Added
+
+- Per-device WiFi country override in the captive portal, persisted in NVS, so a
+  device can be pointed at a stricter regulatory domain (e.g. set `NL` to force
+  active scanning on channels 1-13 for a router parked on channel 13). Empty
+  falls back to the build default.
+- "Recalibrate WiFi" action on both the settings screen and the connection-error
+  screen that wipes the stored PHY calibration data and reboots, recovering from
+  corrupt calibration without serial access.
+
+### Changed
+
+- The regulatory domain now defaults to the world-safe `"01"` (legal anywhere),
+  with 802.11d adaptation plus the per-device override covering edge-case
+  routers.
+- The station now performs an all-channel scan sorted by signal strength and
+  connects to the strongest matching AP instead of the first one advertising the
+  SSID, fixing repeated latching onto a weak or flaky AP in mesh, multi-AP, and
+  repeater networks.
+- The station advertises WPA3-SAE/PMF capability (`pmf_cfg.capable`,
+  `sae_pwe_h2e`) and logs the disconnect reason code to aid diagnosis.
+
+### Fixed
+
+- The captive-portal SoftAP is now discoverable on the ESP32-S3: bandwidth
+  (HT20) and 11b/g protocol are set before `esp_wifi_start()`, and the
+  regulatory country code is applied before start so all channels are usable
+  (works around ESP-IDF #13508).
+
 ## [0.3.0] - 2026-06-22
 
 Idle-screen usability release: product search and last-scan shortcuts let you
@@ -136,7 +172,8 @@ flasher, and the first device API contract for grocy-mealie-sync.
   WiFi setup requests, URL truncation, invalid barcode lengths, stale timeout
   events, and mismatched create/link product response shapes.
 
-[Unreleased]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.0.1...v0.1.0
