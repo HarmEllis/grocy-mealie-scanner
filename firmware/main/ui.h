@@ -33,6 +33,7 @@ typedef enum {
     UI_EVT_OTA_SKIP,         /* "Later" tapped on the OTA-available screen */
     UI_EVT_CHECK_UPDATE,     /* "Check for updates" tapped on the settings screen */
     UI_EVT_OPEN_SETUP,       /* "WiFi & API setup" tapped (settings / conn-error) */
+    UI_EVT_RECALIBRATE_WIFI, /* "Recalibrate WiFi" tapped on the settings screen */
 } ui_event_type_t;
 
 typedef struct {

@@ -194,6 +194,12 @@ static void open_setup_cb(lv_event_t *e)
     emit(UI_EVT_OPEN_SETUP, 0, 0, NULL);
 }
 
+static void recalibrate_wifi_cb(lv_event_t *e)
+{
+    (void)e;
+    emit(UI_EVT_RECALIBRATE_WIFI, 0, 0, NULL);
+}
+
 /* A tappable text/symbol affordance on the status bar (gear, back chevron). */
 static lv_obj_t *add_bar_icon(const char *symbol, lv_align_t align, int dx,
                               lv_event_cb_t cb)
@@ -816,7 +822,22 @@ void ui_show_connection_error(const char *message)
     lv_label_set_text(hint, tr("tap_to_retry"));
     lv_obj_set_style_text_font(hint, &gms_font_12, 0);
     lv_obj_set_style_text_color(hint, COL_DIM, 0);
-    lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -44);
+    lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -64);
+
+    /* Recover a wedged WiFi radio without reaching the settings screen (which
+     * sits behind the idle screen this error state never falls through to):
+     * wipe the stored PHY calibration and reboot. */
+    lv_obj_t *recal = lv_label_create(content);
+    char recal_text[40];
+    snprintf(recal_text, sizeof(recal_text), LV_SYMBOL_REFRESH " %s",
+             tr("wifi_recalibrate"));
+    lv_label_set_text(recal, recal_text);
+    lv_obj_set_style_text_font(recal, &gms_font_12, 0);
+    lv_obj_set_style_text_color(recal, COL_BLUE, 0);
+    lv_obj_align(recal, LV_ALIGN_BOTTOM_MID, 0, -38);
+    lv_obj_add_flag(recal, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_ext_click_area(recal, 10);
+    lv_obj_add_event_cb(recal, recalibrate_wifi_cb, LV_EVENT_CLICKED, NULL);
 
     /* Escape hatch when WiFi/API URL is wrong: jump straight into setup. */
     lv_obj_t *setup = lv_label_create(content);
@@ -826,9 +847,9 @@ void ui_show_connection_error(const char *message)
     lv_label_set_text(setup, setup_text);
     lv_obj_set_style_text_font(setup, &gms_font_12, 0);
     lv_obj_set_style_text_color(setup, COL_BLUE, 0);
-    lv_obj_align(setup, LV_ALIGN_BOTTOM_MID, 0, -16);
+    lv_obj_align(setup, LV_ALIGN_BOTTOM_MID, 0, -12);
     lv_obj_add_flag(setup, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_ext_click_area(setup, 12);
+    lv_obj_set_ext_click_area(setup, 10);
     lv_obj_add_event_cb(setup, open_setup_cb, LV_EVENT_CLICKED, NULL);
     lvgl_port_unlock();
 }
@@ -1449,12 +1470,13 @@ void ui_show_settings(uint8_t beep_level, bool light, const char *language,
     make_settings_row(body, 466, tr("wifi_power_save"), tr("lower_wifi_power"),
                       wifi_power_save, toggle_wifi_ps_cb);
     make_navigation_row(body, 530, tr("wifi_api_setup"), open_setup_cb);
+    make_navigation_row(body, 586, tr("wifi_recalibrate"), recalibrate_wifi_cb);
 
-    int note_y = 586;
+    int note_y = 642;
 #if !CONFIG_GMS_DEMO_MODE
     /* OTA lives only in production builds (ota_update.c is excluded from demo). */
-    make_navigation_row(body, 586, tr("ota_check"), check_update_cb);
-    note_y = 642;
+    make_navigation_row(body, 642, tr("ota_check"), check_update_cb);
+    note_y = 698;
 #endif
 
     lv_obj_t *note = lv_label_create(body);

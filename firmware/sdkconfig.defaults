@@ -50,6 +50,13 @@ CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 # WiFi
 CONFIG_ESP_WIFI_SOFTAP_SUPPORT=y
 
+# Default regulatory domain. "01" is the world-safe value and ships legally
+# anywhere; it leaves channels 12-13 passive-only, but 802.11d adaptation plus
+# the per-device country override in the captive portal cover the rare router
+# stuck on channel 13 (set "NL" there to force active scan on 1-13). See
+# CONFIG_GMS_WIFI_COUNTRY in main/Kconfig.projbuild.
+CONFIG_GMS_WIFI_COUNTRY="01"
+
 # USB-Serial-JTAG CDC as secondary log console (UART0 stays primary).
 CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG=y
 

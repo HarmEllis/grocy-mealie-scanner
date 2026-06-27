@@ -61,6 +61,8 @@
     X("touch_calibrate", "Calibrate touch", "Touch kalibreren") \
     X("wifi_api_setup", "WiFi & API setup", "WiFi & API instellen") \
     X("opening_setup", "Opening setup...", "Setup openen...") \
+    X("wifi_recalibrate", "Recalibrate WiFi", "WiFi herkalibreren") \
+    X("recalibrating_wifi", "Recalibrating WiFi...", "WiFi herkalibreren...") \
     X("scanner", "SCANNER", "SCANNER") \
     X("beep_off", "Off", "Uit") \
     X("beep_low", "Low", "Laag") \
@@ -86,6 +88,8 @@
     X("portal_title", "Scanner setup", "Scanner instellen") \
     X("wifi_network", "WiFi network (SSID)", "WiFi-netwerk (SSID)") \
     X("wifi_password", "WiFi password", "WiFi-wachtwoord") \
+    X("wifi_country", "WiFi country code (01 = worldwide)", \
+      "WiFi-landcode (01 = wereldwijd)") \
     X("base_url", "grocy-mealie-sync base URL", "grocy-mealie-sync basis-URL") \
     X("device_token", "Device token", "Apparaattoken") \
     X("api_ca_cert", "API CA certificate (PEM, optional)", \

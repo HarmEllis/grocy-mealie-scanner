@@ -10,6 +10,9 @@
 #define STORAGE_TOKEN_LEN  96
 #define STORAGE_AP_PASS_LEN 17
 #define STORAGE_LANGUAGE_LEN 3
+/* Regulatory domain code passed to esp_wifi_set_country_code(): an ISO-3166
+ * pair ("NL") or the world-safe "01", up to 3 chars plus NUL. */
+#define STORAGE_COUNTRY_LEN 4
 /* Max length (incl. NUL) of a custom API CA certificate (PEM). NVS string
  * values cap at ~4000 bytes; one PEM CA fits comfortably. Stored under its own
  * NVS key, not in app_config_t, to keep the struct small (it is copied by value
@@ -23,6 +26,7 @@ typedef struct {
     char api_token[STORAGE_TOKEN_LEN];
     char ap_pass[STORAGE_AP_PASS_LEN]; /* SoftAP password, generated once */
     char language[STORAGE_LANGUAGE_LEN]; /* BCP 47 code: "en" or "nl" */
+    char wifi_country[STORAGE_COUNTRY_LEN]; /* regulatory domain; empty = build default */
     uint8_t beep_level;    /* gm67_beep_level_t; default GM67_BEEP_MEDIUM (2) */
     bool    light_enabled; /* WS2812 result flash (settings screen; default on) */
     uint8_t scanner_light; /* gm67_light_mode_t; default GM67_LIGHT_ON_SCAN (0) */

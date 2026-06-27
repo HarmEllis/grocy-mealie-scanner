@@ -23,6 +23,7 @@
 #include "esp_lvgl_port.h"
 #include "esp_netif_sntp.h"
 #include "esp_ota_ops.h"
+#include "esp_phy_init.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -663,6 +664,18 @@ static void handle_ui(const ui_event_t *evt)
         vTaskDelay(pdMS_TO_TICKS(600)); /* let the message render */
         esp_restart();
 #endif
+        break;
+    case UI_EVT_RECALIBRATE_WIFI:
+        /* Wipe the stored WiFi PHY calibration and reboot. The calibration blob
+         * (NVS namespace "phy") is only read during PHY init at boot, so a full,
+         * fresh recalibration runs on the next start. Recovers a device whose
+         * stored calibration drifted into an unusable state — the TX-side
+         * signature we saw: scans find APs but auth never completes and the
+         * SoftAP is invisible — without a web flasher or partition tooling. */
+        ui_show_connecting(tr("recalibrating_wifi"));
+        esp_phy_erase_cal_data_in_nvs();
+        vTaskDelay(pdMS_TO_TICKS(600)); /* let the message render */
+        esp_restart();
         break;
     case UI_EVT_OTA_ACCEPT:
 #if !CONFIG_GMS_DEMO_MODE
