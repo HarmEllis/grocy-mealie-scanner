@@ -48,7 +48,14 @@ static void sta_event_handler(void *arg, esp_event_base_t base, int32_t id, void
     }
 }
 
-static esp_err_t wifi_common_init(void)
+/* The portal-configured regulatory domain, falling back to the build default
+ * when the user never set one. */
+static const char *resolve_country(const app_config_t *cfg)
+{
+    return cfg->wifi_country[0] ? cfg->wifi_country : CONFIG_GMS_WIFI_COUNTRY;
+}
+
+static esp_err_t wifi_common_init(const char *country)
 {
     if (s_events == NULL) {
         s_events = xEventGroupCreate();
@@ -61,13 +68,14 @@ static esp_err_t wifi_common_init(void)
         /* Regulatory domain. With the world-safe default ("01") channels 12-13
          * are passive-only, so an active scan misses a router on auto-channel
          * that lands on 13 — it then shows up as repeated auth failures. Apply
-         * the build-stamped country with 802.11d (the trailing `true`) so the
-         * device still adapts to the AP's advertised domain. Non-fatal: an
-         * unsupported code must not abort boot before the portal is reachable. */
-        esp_err_t cc_err = esp_wifi_set_country_code(CONFIG_GMS_WIFI_COUNTRY, true);
+         * the configured country (portal, falling back to the build default)
+         * with 802.11d (the trailing `true`) so the device still adapts to the
+         * AP's advertised domain. Non-fatal: an unsupported code must not abort
+         * boot before the portal is reachable. */
+        esp_err_t cc_err = esp_wifi_set_country_code(country, true);
         if (cc_err != ESP_OK) {
             ESP_LOGW(TAG, "set_country_code(%s) failed: %s — using driver default",
-                     CONFIG_GMS_WIFI_COUNTRY, esp_err_to_name(cc_err));
+                     country, esp_err_to_name(cc_err));
         }
     }
     return ESP_OK;
@@ -86,7 +94,7 @@ esp_err_t wifi_conn_set_power_save(bool enabled)
 
 esp_err_t wifi_conn_start(const app_config_t *cfg, uint32_t timeout_ms)
 {
-    ESP_RETURN_ON_ERROR(wifi_common_init(), TAG, "common");
+    ESP_RETURN_ON_ERROR(wifi_common_init(resolve_country(cfg)), TAG, "common");
     (void)wifi_conn_set_power_save(cfg->wifi_power_save);
     if (!s_sta_started) {
         esp_netif_create_default_wifi_sta();
@@ -169,6 +177,9 @@ static const char PORTAL_FORM[] =
     "<label>%s</label><input name='ssid' value='%s' required maxlength='32'>"
     "<label>%s</label><input name='pass' type='password' value='%s' maxlength='64'>"
     "<label>%s</label>"
+    "<input name='cc' value='%s' maxlength='3' placeholder='01' "
+    "style='text-transform:uppercase'>"
+    "<label>%s</label>"
     "<input name='url' value='%s' placeholder='http://192.168.1.10:3000' required maxlength='127'>"
     "<label>%s</label><input name='token' value='%s' maxlength='95'>"
     "<label>%s</label>"
@@ -179,6 +190,30 @@ static const char PORTAL_FORM[] =
 static bool is_hex_digit(char c)
 {
     return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+}
+
+/* A regulatory code is either an ISO-3166 pair ("NL") or a numeric world code
+ * ("01"); accept 2-3 alphanumeric chars and upper-case letters in place. An
+ * empty value is valid and clears the override, falling back to the build
+ * default. Returns false only for a present-but-malformed code. */
+static bool normalize_country(char *cc)
+{
+    size_t n = strlen(cc);
+    if (n == 0) {
+        return true;
+    }
+    if (n < 2 || n > 3) {
+        return false;
+    }
+    for (size_t i = 0; i < n; i++) {
+        char c = cc[i];
+        if (c >= 'a' && c <= 'z') {
+            cc[i] = c - ('a' - 'A');
+        } else if (!((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z'))) {
+            return false;
+        }
+    }
+    return true;
 }
 
 /* URL-decode src[0..srclen) into dst, writing at most cap-1 bytes plus a NUL.
@@ -266,6 +301,7 @@ static esp_err_t portal_get_handler(httpd_req_t *req)
              dutch ? "" : " selected", dutch ? " selected" : "",
              portal_tr("wifi_network"), s_prov_cfg->wifi_ssid,
              portal_tr("wifi_password"), s_prov_cfg->wifi_pass,
+             portal_tr("wifi_country"), resolve_country(s_prov_cfg),
              portal_tr("base_url"), s_prov_cfg->api_url,
              portal_tr("device_token"), s_prov_cfg->api_token,
              portal_tr("api_ca_cert"), ca,
@@ -321,6 +357,7 @@ static esp_err_t portal_save_handler(httpd_req_t *req)
     ok = form_get_field(body, "pass", cfg.wifi_pass, sizeof(cfg.wifi_pass)) && ok;
     ok = form_get_field(body, "url", cfg.api_url, sizeof(cfg.api_url)) && ok;
     ok = form_get_field(body, "token", cfg.api_token, sizeof(cfg.api_token)) && ok;
+    ok = form_get_field(body, "cc", cfg.wifi_country, sizeof(cfg.wifi_country)) && ok;
     ok = form_get_field(body, "lang", language, sizeof(language)) && ok;
     ok = form_get_field(body, "insec", insec, sizeof(insec)) && ok;
     ok = form_get_field(body, "ca", ca, STORAGE_CA_CERT_MAX) && ok;
@@ -330,6 +367,9 @@ static esp_err_t portal_save_handler(httpd_req_t *req)
         ok = false;
     }
     cfg.api_insecure = (insec[0] == '1');
+    if (!normalize_country(cfg.wifi_country)) {
+        ok = false;
+    }
     free(body);
 
     if (!ok) {
@@ -394,7 +434,7 @@ static esp_err_t portal_redirect_handler(httpd_req_t *req)
 esp_err_t wifi_prov_run(app_config_t *cfg, char *ap_ssid_out, size_t ap_ssid_cap)
 {
     s_prov_cfg = cfg;
-    ESP_RETURN_ON_ERROR(wifi_common_init(), TAG, "common");
+    ESP_RETURN_ON_ERROR(wifi_common_init(resolve_country(cfg)), TAG, "common");
     esp_netif_create_default_wifi_ap();
 
     uint8_t mac[6];

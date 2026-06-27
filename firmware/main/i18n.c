@@ -88,6 +88,8 @@
     X("portal_title", "Scanner setup", "Scanner instellen") \
     X("wifi_network", "WiFi network (SSID)", "WiFi-netwerk (SSID)") \
     X("wifi_password", "WiFi password", "WiFi-wachtwoord") \
+    X("wifi_country", "WiFi country code (01 = worldwide)", \
+      "WiFi-landcode (01 = wereldwijd)") \
     X("base_url", "grocy-mealie-sync base URL", "grocy-mealie-sync basis-URL") \
     X("device_token", "Device token", "Apparaattoken") \
     X("api_ca_cert", "API CA certificate (PEM, optional)", \

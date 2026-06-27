@@ -65,6 +65,7 @@ esp_err_t storage_load(app_config_t *cfg)
         load_str(h, "api_token", cfg->api_token, sizeof(cfg->api_token));
         load_str(h, "ap_pass", cfg->ap_pass, sizeof(cfg->ap_pass));
         load_str(h, "lang", cfg->language, sizeof(cfg->language));
+        load_str(h, "wifi_cc", cfg->wifi_country, sizeof(cfg->wifi_country));
         cfg->beep_level = (uint8_t)load_u32(h, "beep_lvl", 2);
         cfg->light_enabled = load_flag(h, "light", true);
         cfg->scanner_light = (uint8_t)load_u32(h, "scan_lgt", 0);
@@ -112,6 +113,7 @@ esp_err_t storage_save(const app_config_t *cfg)
     if (err == ESP_OK) err = nvs_set_str(h, "api_token", cfg->api_token);
     if (err == ESP_OK) err = nvs_set_str(h, "ap_pass", cfg->ap_pass);
     if (err == ESP_OK) err = nvs_set_str(h, "lang", cfg->language);
+    if (err == ESP_OK) err = nvs_set_str(h, "wifi_cc", cfg->wifi_country);
     if (err == ESP_OK) err = nvs_set_u8(h, "wifi_ps", cfg->wifi_power_save ? 1 : 0);
     if (err == ESP_OK) err = nvs_set_u8(h, "api_insec", cfg->api_insecure ? 1 : 0);
     if (err == ESP_OK) err = nvs_commit(h);
