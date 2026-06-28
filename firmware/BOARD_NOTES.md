@@ -53,8 +53,15 @@ do not put the GM67 there.
 |----------|------------|---------------|
 | RX | IO21 | UART1 TX |
 | TX | IO14 | UART1 RX |
-| VCC | 3V3 | |
+| VCC | **5 V** (board 5 V / USB VBUS rail) | |
 | GND | GND | |
+
+> **Power the GM67 from 5 V, not 3V3.** The module's operating voltage is
+> 5 V — it does **not** run reliably on the header's 3V3 pin (it browns out
+> / fails to decode). Take VCC from the board's 5 V rail (the same supply
+> the WS2812 uses) or USB VBUS. Its UART lines are TTL 3.3 V/5 V
+> tolerant, so the IO21/IO14 signal wiring is unchanged — only VCC moves to
+> 5 V.
 
 GM67 defaults: 9600 baud 8N1, SSI/plain-text output. At boot the firmware now
 **actively configures the module** over UART1 (serial command protocol,

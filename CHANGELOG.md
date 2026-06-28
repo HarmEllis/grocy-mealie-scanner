@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-06-28
+
+Documentation fix release.
+
+### Fixed
+
+- Hardware docs (`README.md`, `firmware/BOARD_NOTES.md`) now correctly state
+  that the GM67 scanner's VCC must be powered from **5 V** (the board's 5 V /
+  USB VBUS rail), not the 3V3 header pin. The module does not run reliably on
+  3.3 V. Its UART lines remain TTL 3.3 V-tolerant, so the IO21/IO14 signal
+  wiring is unchanged.
+
 ## [0.4.0] - 2026-06-27
 
 WiFi connectivity release: this hardens provisioning and station setup so the
