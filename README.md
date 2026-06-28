@@ -42,7 +42,7 @@ The device talks to a device API hosted by
 | Part | Details |
 |------|---------|
 | Board | Freenove ESP32-S3 Display 2.8" (FNK0104AB): ESP32-S3R8, 16 MB flash, 8 MB PSRAM, ILI9341 240×320 IPS, FT6336U capacitive touch |
-| Scanner | GM67 barcode scan engine, wired to the Expanded-IO header (UART1: ESP TX = GPIO21 → GM67 RX, ESP RX = GPIO14 ← GM67 TX, 3V3 + GND) |
+| Scanner | GM67 barcode scan engine, wired to the Expanded-IO header (UART1: ESP TX = GPIO21 → GM67 RX, ESP RX = GPIO14 ← GM67 TX). Power VCC from **5 V** (the board's 5 V / USB VBUS rail), **not** 3V3 — the module needs 5 V and will not work on 3.3 V; its UART lines are 3.3 V-tolerant so the signal wiring is unchanged |
 
 Full pin map and bring-up notes: [`firmware/BOARD_NOTES.md`](firmware/BOARD_NOTES.md).
 
