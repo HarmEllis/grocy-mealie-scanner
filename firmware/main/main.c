@@ -11,6 +11,7 @@
 #if !CONFIG_GMS_DEMO_MODE
 #include "ota_update.h"
 #endif
+#include "provision_qr.h"
 #include "status_led.h"
 #include "storage.h"
 #include "touch_calibration.h"
@@ -126,6 +127,60 @@ static void on_scan(const char *code)
     app_event_t evt = { .kind = APP_EVT_SCAN };
     strlcpy(evt.barcode, code, sizeof(evt.barcode));
     xQueueSend(s_queue, &evt, 0);
+}
+
+static bool normalize_qr_country(char *cc)
+{
+    size_t n = strlen(cc);
+    if (n == 0) return true;
+    if (n < 2 || n > 3) return false;
+    for (size_t i = 0; i < n; i++) {
+        if (cc[i] >= 'a' && cc[i] <= 'z') cc[i] -= 'a' - 'A';
+        else if (!((cc[i] >= 'A' && cc[i] <= 'Z') ||
+                   (cc[i] >= '0' && cc[i] <= '9'))) return false;
+    }
+    return true;
+}
+
+static bool apply_provision_qr(const char *code)
+{
+    if (!provision_qr_is_payload(code)) return false;
+    provision_qr_config_t qr;
+    if (!provision_qr_parse(code, &qr) || !qr.wifi_ssid[0] || !qr.api_url[0] ||
+        !i18n_language_is_supported(qr.language) ||
+        !normalize_qr_country(qr.wifi_country) ||
+        (strncmp(qr.api_url, "http://", 7) != 0 &&
+         strncmp(qr.api_url, "https://", 8) != 0)) {
+        ESP_LOGW(TAG, "invalid setup QR rejected");
+        ui_show_connecting(tr("setup_qr_invalid"));
+        return true;
+    }
+    size_t n = strlen(qr.api_url);
+    while (n > 0 && qr.api_url[n - 1] == '/') qr.api_url[--n] = '\0';
+    app_config_t cfg = s_cfg;
+    strlcpy(cfg.wifi_ssid, qr.wifi_ssid, sizeof(cfg.wifi_ssid));
+    strlcpy(cfg.wifi_pass, qr.wifi_pass, sizeof(cfg.wifi_pass));
+    strlcpy(cfg.api_url, qr.api_url, sizeof(cfg.api_url));
+    strlcpy(cfg.api_token, qr.api_token, sizeof(cfg.api_token));
+    strlcpy(cfg.wifi_country, qr.wifi_country, sizeof(cfg.wifi_country));
+    strlcpy(cfg.language, qr.language, sizeof(cfg.language));
+    cfg.api_insecure = qr.api_insecure;
+    if (storage_save(&cfg) != ESP_OK) {
+        ui_show_connecting(tr("setup_qr_save_failed"));
+        return true;
+    }
+    s_cfg = cfg;
+    ESP_LOGI(TAG, "setup QR applied; rebooting");
+    ui_show_connecting(i18n_tr_for("saved", cfg.language));
+    vTaskDelay(pdMS_TO_TICKS(700));
+    esp_restart();
+    return true;
+}
+
+static void on_setup_scan(const char *code)
+{
+    if (!apply_provision_qr(code))
+        ESP_LOGI(TAG, "ignoring product barcode during setup");
 }
 
 static bool on_ui_event(const ui_event_t *ui_evt)
@@ -318,6 +373,7 @@ static void handle_ota_check_manual(void)
 
 static void handle_scan(const char *barcode)
 {
+    if (apply_provision_qr(barcode)) return;
     /* A fresh scan takes over from any screen except an open keyboard:
      * losing typed input to an accidental re-scan would be worse. */
     if (s_state == APP_PROPOSAL || s_state == APP_SEARCH ||
@@ -866,14 +922,8 @@ void app_main(void)
     if (!storage_is_provisioned(&s_cfg) || setup_requested) {
         char ap_ssid[16];
         ui_show_connecting(tr("starting_setup"));
-        /* Keep the scanner dark for the whole setup portal: close the gate, then
-         * bring up the reader so gm67_task asserts SCAN_DISABLE on the hardware
-         * (the enable/disable state persists in the scanner's NVS, so we must
-         * actively turn it off rather than rely on a prior session). The portal
-         * reboots the device when done, so this is the only gm67_init() on the
-         * provisioning path. */
-        gm67_set_scanning(false);
-        ESP_ERROR_CHECK(gm67_init(on_scan, SCAN_DEBOUNCE_MS));
+        /* During setup, accept versioned configuration QR payloads only. */
+        ESP_ERROR_CHECK(gm67_init(on_setup_scan, SCAN_DEBOUNCE_MS));
         ESP_ERROR_CHECK(wifi_prov_run(&s_cfg, ap_ssid, sizeof(ap_ssid)));
         ui_show_provisioning(ap_ssid, s_cfg.ap_pass);
         /* The portal's POST handler saves the config and reboots. */

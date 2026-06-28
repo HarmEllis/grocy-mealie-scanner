@@ -62,3 +62,16 @@ section {
   border-radius: 3px;
   font-size: 12px;
 }
+
+.config-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; max-width:720px; }
+.config-grid label { display:grid; gap:5px; color:#44545b; font-size:13px; }
+.config-grid .wide { grid-column:1/-1; }
+.config-grid input, .config-grid select { box-sizing:border-box; width:100%; padding:10px 12px; border:1px solid #bcc8cd; border-radius:7px; background:#fff; color:#152025; font:inherit; }
+.config-grid .checkbox { display:flex; align-items:center; gap:8px; }
+.config-grid .checkbox input { width:auto; }
+.config-grid button { width:max-content; padding:10px 16px; border:0; border-radius:7px; background:#126a78; color:#fff; font-weight:650; cursor:pointer; }
+.qr-result { margin-top:20px; padding:18px; width:max-content; max-width:calc(100% - 36px); border:1px solid #cfd8dc; border-radius:10px; background:#fff; text-align:center; }
+#setup-qr { max-width:360px; width:100% !important; }
+#setup-qr svg { display:block; width:100%; height:auto; }
+.qr-result p { margin-top:10px; font-size:13px; color:#44545b; }
+@media (max-width:620px) { .config-grid { grid-template-columns:1fr; } .config-grid .wide { grid-column:auto; } header { align-items:flex-start; flex-direction:column; } }

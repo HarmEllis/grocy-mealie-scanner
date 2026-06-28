@@ -98,6 +98,10 @@
       "Vertrouw elk certificaat (alleen API)") \
     X("save_reboot", "Save and reboot", "Opslaan en herstarten") \
     X("saved", "Saved!", "Opgeslagen!") \
+    X("setup_qr_invalid", "Invalid setup QR - scan a new code", \
+      "Ongeldige setup-QR - scan een nieuwe code") \
+    X("setup_qr_save_failed", "Could not save setup QR", \
+      "Setup-QR kon niet worden opgeslagen") \
     X("rebooting", "The scanner reboots and connects to your WiFi.", \
       "De scanner herstart en maakt verbinding met je WiFi.") \
     X("form_too_large", "Form too large", "Formulier is te groot") \

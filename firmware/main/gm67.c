@@ -58,6 +58,8 @@ static bool code_is_plausible(const char *code, size_t len)
     if (len < 4 || len >= GM67_MAX_CODE_LEN) {
         return false;
     }
+    bool setup_qr = len >= 5 && memcmp(code, "GMS1_", 5) == 0;
+    if (!setup_qr && len >= GM67_MAX_BARCODE_LEN) return false;
     for (size_t i = 0; i < len; i++) {
         unsigned char c = (unsigned char)code[i];
         if (!isalnum(c) && c != '-' && c != '_') {
