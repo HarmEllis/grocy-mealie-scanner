@@ -3,59 +3,29 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <!--
-    style-src allows 'unsafe-inline' because esp-web-tools injects its
-    install/log dialog styles into its custom-element shadow DOM.
-    script-src stays strictly pinned with SRI.
-  -->
-  <meta
-    http-equiv="Content-Security-Policy"
-    content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' https://unpkg.com/esp-web-tools@10.2.1/dist/web/; connect-src 'self'"
-  >
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' https://unpkg.com/esp-web-tools@10.2.1/dist/web/ https://unpkg.com/qrcode-generator@1.4.4/; connect-src 'self'">
   <title>grocy-mealie-scanner flasher</title>
-  <script
-    type="module"
-    src="https://unpkg.com/esp-web-tools@10.2.1/dist/web/install-button.js"
-    integrity="sha384-DLSRQX8nILUsYRCKoOL+FvGRis5HoNA+9ak4QYqreENR9UVDIXUSoZrdt1Ibty96"
-    crossorigin="anonymous"
-  ></script>
+  <script type="module" src="https://unpkg.com/esp-web-tools@10.2.1/dist/web/install-button.js" integrity="sha384-DLSRQX8nILUsYRCKoOL+FvGRis5HoNA+9ak4QYqreENR9UVDIXUSoZrdt1Ibty96" crossorigin="anonymous"></script>
+  <script defer src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js" integrity="sha384-8FWZA6BGMXhsfO+BLtrJK0We6gg5o1JyO8xQm6peWDEUs17ACA5ziE/NIAkl9z2k" crossorigin="anonymous"></script>
+  <script defer src="app.js"></script>
   <link rel="stylesheet" href="styles.css">
 </head>
-<body>
-  <main>
-    <header>
-      <h1>grocy-mealie-scanner</h1>
-      <p id="status">Ready to flash</p>
-      <p class="version"><!-- VERSION --></p>
-    </header>
-
-    <section>
-      <h2>1. Flash firmware</h2>
-      <p class="hint">Plug the device in over USB and press <em>Install</em>. Web Serial is used only for the initial flash; configuration happens on the device's SoftAP portal afterwards.</p>
-      <div class="row">
-        <esp-web-install-button id="installer" manifest="manifest.json"></esp-web-install-button>
-      </div>
-    </section>
-
-    <section>
-      <h2>2. First-time provisioning</h2>
-      <p class="hint">When flashing finishes, the touchscreen shows a QR code and a SoftAP name like <code>scanner-A4F2</code> with a password. Scan the QR (or join the AP manually and open <code>http://192.168.4.1</code>) and fill in WiFi + API. The device saves and reboots.</p>
-      <p class="hint">Need to re-open this flow later? Power the device on first, then hold <strong>BOOT</strong> for ~5&nbsp;s until the SoftAP setup screen appears. Do <em>not</em> hold BOOT while plugging in — that puts the ESP32-S3 into ROM download mode before firmware runs.</p>
-    </section>
-  </main>
-
-  <script type="module">
-    // After a successful install, hop to /flashed for the full V4 S3
-    // success page with troubleshooting and the e-ink mockup.
-    const btn = document.getElementById('installer');
-    btn.addEventListener('state-changed', (ev) => {
-      const detail = ev.detail || {};
-      if (detail.state === 'FINISHED') {
-        window.location.href = 'flashed.html';
-      }
-      const s = document.getElementById('status');
-      if (s && detail.message) s.textContent = detail.message;
-    });
-  </script>
-</body>
-</html>
+<body><main>
+  <header><h1>grocy-mealie-scanner</h1><p id="status">Ready to flash</p><p class="version"><!-- VERSION --></p></header>
+  <section><h2>1. Flash firmware</h2><p class="hint">Connect the device over USB and press <em>Install</em>.</p><div class="row"><esp-web-install-button id="installer" manifest="manifest.json"></esp-web-install-button></div></section>
+  <section><h2>2. Generate setup QR</h2>
+    <p class="hint">All data stays in this browser. After flashing, point the scanner at the generated QR; it saves the connection settings and reboots.</p>
+    <form id="qr-form" class="config-grid">
+      <label>WiFi network (SSID)<input name="ssid" required maxlength="32" autocomplete="off"></label>
+      <label>WiFi password<input name="password" type="password" maxlength="64" autocomplete="current-password"></label>
+      <label class="wide">grocy-mealie-sync base URL<input name="apiUrl" required maxlength="127" placeholder="http://192.168.1.10:3000" inputmode="url"></label>
+      <label class="wide">Device token<input name="token" maxlength="95" autocomplete="off"></label>
+      <label>WiFi country<select name="country"><option value="NL">NL — Netherlands</option><option value="BE">BE — Belgium</option><option value="DE">DE — Germany</option><option value="01">01 — Worldwide</option></select></label>
+      <label>Device language<select name="language"><option value="en">English</option><option value="nl">Nederlands</option></select></label>
+      <label class="checkbox wide"><input name="insecure" type="checkbox"> Trust any API certificate</label>
+      <button type="submit">Generate QR</button><p id="qr-message" class="hint" aria-live="polite"></p>
+    </form>
+    <div id="qr-result" class="qr-result" hidden><div id="setup-qr"></div><p>Scan this code with the GM67 scanner.</p></div>
+  </section>
+  <section><h2>Alternative: SoftAP setup</h2><p class="hint">Join the <code>scanner-XXXX</code> network shown on the touchscreen and open <code>http://192.168.4.1</code>. Hold BOOT for about 5 seconds after startup to reopen setup later.</p></section>
+</main></body></html>

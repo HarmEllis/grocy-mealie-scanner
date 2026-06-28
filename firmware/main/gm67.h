@@ -4,9 +4,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-/* Buffer size: the device API permits 64-character barcodes, so reserve
- * 64 code bytes + the NUL terminator. */
-#define GM67_MAX_CODE_LEN 65
+/* Product barcodes remain limited to 64 characters. Setup QR payloads use
+ * the larger reader buffer and are validated separately. */
+#define GM67_MAX_BARCODE_LEN 65
+#define GM67_MAX_CODE_LEN    512
 
 /* Called from the GM67 reader task whenever a complete barcode arrives.
  * `code` is NUL-terminated, trimmed of CR/LF, at most GM67_MAX_CODE_LEN-1

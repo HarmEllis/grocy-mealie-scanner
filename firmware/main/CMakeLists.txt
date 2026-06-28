@@ -24,6 +24,7 @@ idf_component_register(
         i18n.c
         gm67.c
         gm67_proto.c
+        provision_qr.c
         status_led.c
         storage.c
         wifi_conn.c
