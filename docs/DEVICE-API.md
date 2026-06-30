@@ -33,13 +33,16 @@ appropriate 4xx/5xx status.
 Connectivity + auth check used by the firmware at boot and as a health probe.
 
 ```json
-{ "ok": true, "app": "grocy-mealie-sync", "version": "1.9.0", "apiVersion": 2 }
+{ "ok": true, "app": "grocy-mealie-sync", "version": "1.9.0", "apiVersion": 3 }
 ```
 
 - `apiVersion` is the device-API capability version. The firmware defaults to
   `1` when the field is absent (older servers) and uses it to hide features the
   server does not yet support — e.g. the on-device product-search affordance is
   shown only when `apiVersion >= 2` (adds `GET /products/{id}`).
+  - `apiVersion >= 3` advertises `shoppingListAmount` on device products
+    (the shopping-list count card). The field is best-effort and defaults to
+    `0`, so the card degrades gracefully on a pre-`3` server rather than 404ing.
 
 ### `GET /api/device/v1/scan/{barcode}`
 

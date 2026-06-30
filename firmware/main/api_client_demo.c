@@ -92,7 +92,7 @@ esp_err_t api_ping(char *errbuf)
 
 int api_server_api_version(void)
 {
-    return 2; /* demo server supports the full contract incl. products/{id} */
+    return 3; /* demo server supports the full contract incl. shoppingListAmount */
 }
 
 int api_last_http_status(void)
