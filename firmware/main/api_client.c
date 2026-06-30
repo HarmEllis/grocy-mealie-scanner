@@ -194,6 +194,7 @@ static void parse_product(const cJSON *p, api_product_t *out)
     out->opened_amount = json_get_num(p, "openedAmount", 0);
     out->min_stock_amount = json_get_num(p, "minStockAmount", 0);
     out->on_shopping_list = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(p, "onShoppingList"));
+    out->shopping_list_amount = json_get_num(p, "shoppingListAmount", 0);
 }
 
 /* Copies the server's {"error": "..."} into errbuf, with a fallback. */
@@ -301,8 +302,8 @@ esp_err_t api_scan(const char *barcode, api_scan_result_t *out, char *errbuf)
     return ESP_OK;
 }
 
-esp_err_t api_action(int product_id, api_action_t action, api_action_result_t *out,
-                     char *errbuf)
+esp_err_t api_action(int product_id, api_action_t action, int amount,
+                     api_action_result_t *out, char *errbuf)
 {
     static const char *action_names[] = {
         [API_ACTION_PURCHASE] = "purchase",
@@ -311,10 +312,14 @@ esp_err_t api_action(int product_id, api_action_t action, api_action_result_t *o
         [API_ACTION_SHOPPING_LIST] = "add_to_shopping_list",
     };
 
+    if (amount < 1) {
+        amount = 1;
+    }
     char path[80];
     snprintf(path, sizeof(path), "/api/device/v1/products/%d/action", product_id);
     char body[64];
-    snprintf(body, sizeof(body), "{\"action\":\"%s\",\"amount\":1}", action_names[action]);
+    snprintf(body, sizeof(body), "{\"action\":\"%s\",\"amount\":%d}",
+             action_names[action], amount);
 
     int status = 0;
     cJSON *json = NULL;

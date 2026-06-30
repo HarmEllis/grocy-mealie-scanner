@@ -34,7 +34,7 @@ static api_product_t s_products[16] = {
       .stock_amount = 5, .opened_amount = 1, .min_stock_amount = 2 },
     { .id = 110, .name = "Cola Zero 1.5L", .quantity_unit = "bottle",
       .stock_amount = 1, .opened_amount = 0, .min_stock_amount = 1,
-      .on_shopping_list = true },
+      .on_shopping_list = true, .shopping_list_amount = 2 },
     { .id = 111, .name = "Lemonade 1L", .quantity_unit = "bottle",
       .stock_amount = 0, .opened_amount = 0, .min_stock_amount = 0 },
     { .id = DEMO_GENERIC_ID, .name = "Demo product", .quantity_unit = "pcs",
@@ -158,18 +158,33 @@ esp_err_t api_scan(const char *barcode, api_scan_result_t *out, char *errbuf)
     g->opened_amount = 0;
     g->min_stock_amount = 1;
     g->on_shopping_list = false;
+    g->shopping_list_amount = 0;
     out->status = API_SCAN_FOUND;
     out->product = *g;
     return ESP_OK;
 }
 
-esp_err_t api_action(int product_id, api_action_t action, api_action_result_t *out,
-                     char *errbuf)
+esp_err_t api_action(int product_id, api_action_t action, int amount,
+                     api_action_result_t *out, char *errbuf)
 {
     api_product_t *p = find_product(product_id);
     if (p == NULL) {
         set_err(errbuf, tr("demo_unknown_product"));
         return ESP_FAIL;
+    }
+    if (amount < 1) {
+        amount = 1;
+    }
+
+    /* Mirror the real API's stock guards: reject amounts that exceed what is
+     * available so demo verification exercises the 409 path, not a silent clamp. */
+    if (action == API_ACTION_CONSUME && amount > p->stock_amount) {
+        set_err(errbuf, tr("action_failed"));
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (action == API_ACTION_OPEN && amount > p->stock_amount - p->opened_amount) {
+        set_err(errbuf, tr("action_failed"));
+        return ESP_ERR_INVALID_STATE;
     }
 
     memset(out, 0, sizeof(*out));
@@ -182,22 +197,21 @@ esp_err_t api_action(int product_id, api_action_t action, api_action_result_t *o
 
     switch (action) {
     case API_ACTION_PURCHASE:
-        p->stock_amount += 1;
+        p->stock_amount += amount;
         break;
     case API_ACTION_CONSUME:
-        p->stock_amount = p->stock_amount > 0 ? p->stock_amount - 1 : 0;
+        p->stock_amount -= amount;
         if (p->opened_amount > p->stock_amount) {
             p->opened_amount = p->stock_amount;
         }
         break;
     case API_ACTION_OPEN:
-        if (p->opened_amount < p->stock_amount) {
-            p->opened_amount += 1;
-        }
+        p->opened_amount += amount;
         break;
     case API_ACTION_SHOPPING_LIST:
-        p->on_shopping_list = true;
-        out->shopping_quantity = p->min_stock_amount > 0 ? p->min_stock_amount : 1;
+        p->shopping_list_amount += amount;
+        p->on_shopping_list = p->shopping_list_amount > 0;
+        out->shopping_quantity = p->shopping_list_amount;
         break;
     }
 

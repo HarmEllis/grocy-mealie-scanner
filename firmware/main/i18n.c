@@ -10,9 +10,9 @@
     X("point_scanner", "Point the scanner\nat a barcode", "Richt de scanner\nop een barcode") \
     X("last", "LAST", "LAATSTE") \
     X("scanned", "Scanned", "Gescand") \
-    X("in_stock", "IN STOCK", "VOORRAAD") \
+    X("in_stock", "STOCK", "VOORR") \
     X("minimum", "MIN", "MIN") \
-    X("opened_stat", "OPENED", "GEOPEND") \
+    X("opened_stat", "OPEN", "OPEN") \
     X("action_bought", "Bought", "Gekocht") \
     X("action_opened", "Opened", "Geopend") \
     X("action_consumed", "Consumed", "Verbruikt") \
@@ -22,6 +22,10 @@
     X("added_to_list", "Added to list", "Aan lijst toegevoegd") \
     X("stock_change_fmt", "Stock  %s -> %s", "Voorraad  %s -> %s") \
     X("open_change_fmt", "Open  %s -> %s", "Geopend  %s -> %s") \
+    X("amount_change_fmt", "%s -> %s", "%s -> %s") \
+    X("confirm_amount_fmt", "Confirm x%d", "Bevestig x%d") \
+    X("change_amount_hint", "Tap to change amount", "Tik om aantal te wijzigen") \
+    X("list_stat", "LIST", "LIJST") \
     X("on_shopping_list", "On shopping list", "Op boodschappenlijst") \
     X("error", "Error", "Fout") \
     X("tap_to_dismiss", "Tap to dismiss", "Tik om te sluiten") \
