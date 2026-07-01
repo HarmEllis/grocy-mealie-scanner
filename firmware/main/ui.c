@@ -1281,10 +1281,18 @@ void ui_show_not_found(const api_scan_result_t *scan)
         lv_obj_align(btn, LV_ALIGN_TOP_MID, 0, y);
         y += 49;
     }
-    if (scan->has_external_name) {
+    /* Create-a-product is always offered: OFF's name pre-fills the field when
+     * present, otherwise the user types it on the (now larger) keyboard. */
+    {
         char text[96];
-        snprintf(text, sizeof(text), tr("create_quoted_fmt"), scan->external_name);
-        lv_obj_t *btn = make_button(content, text, scan->suggestion_count == 0,
+        const char *label;
+        if (scan->has_external_name) {
+            snprintf(text, sizeof(text), tr("create_quoted_fmt"), scan->external_name);
+            label = text;
+        } else {
+            label = tr("create_product");
+        }
+        lv_obj_t *btn = make_button(content, label, scan->suggestion_count == 0,
                                     open_proposal_cb, NULL);
         lv_obj_align(btn, LV_ALIGN_TOP_MID, 0, y);
         y += scan->suggestion_count == 0 ? 49 : 47;
@@ -1566,6 +1574,11 @@ void ui_show_search(void)
     lvgl_port_lock(0);
     lv_obj_t *content = screen_reset(tr("search"), COL_BLUE, true);
     lv_obj_set_style_pad_hor(content, 14, 0);
+
+    /* Back chevron → idle; shift the dot + label right to make room. */
+    lv_obj_align(s_status_dot, LV_ALIGN_LEFT_MID, 18, 0);
+    lv_obj_align(s_status_label, LV_ALIGN_LEFT_MID, 30, 0);
+    add_bar_icon(LV_SYMBOL_LEFT, LV_ALIGN_LEFT_MID, 0, dismiss_cb);
 
     s_search_ta = lv_textarea_create(content);
     lv_textarea_set_one_line(s_search_ta, true);
