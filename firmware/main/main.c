@@ -471,7 +471,7 @@ static void handle_link(int product_id)
  * show it exactly as a scan would. */
 static void handle_pick_product(int product_id)
 {
-    ui_show_saving();
+    ui_show_loading();
 
     char err[API_ERR_LEN];
     api_product_t product;

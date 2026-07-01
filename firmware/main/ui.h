@@ -69,6 +69,7 @@ void ui_show_product(const api_product_t *product);
  * UI_EVT_ACTION_CONFIRM (action + chosen amount). */
 void ui_show_action_confirm(api_action_t action, const api_product_t *product);
 void ui_show_saving(void);
+void ui_show_loading(void);
 void ui_show_flash(const api_action_result_t *result);
 void ui_show_not_found(const api_scan_result_t *scan);
 void ui_show_proposal(const char *initial_name);

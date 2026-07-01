@@ -19,6 +19,8 @@
     X("action_shopping", "Shopping", "Lijst") \
     X("saving_status", "Saving", "Opslaan") \
     X("saving", "Saving...", "Opslaan...") \
+    X("loading_status", "Loading", "Laden") \
+    X("loading", "Loading...", "Laden...") \
     X("added_to_list", "Added to list", "Aan lijst toegevoegd") \
     X("stock_change_fmt", "Stock  %s -> %s", "Voorraad  %s -> %s") \
     X("open_change_fmt", "Open  %s -> %s", "Geopend  %s -> %s") \

@@ -930,10 +930,13 @@ void ui_show_action_confirm(api_action_t action, const api_product_t *product)
 /* Saving / flash / error                                              */
 /* ------------------------------------------------------------------ */
 
-void ui_show_saving(void)
+/* Shared spinner screen for in-flight requests. Callers pass the header status
+ * and the label under the spinner (e.g. "Saving" for writes, "Loading" for the
+ * read-only product fetch behind a search pick or last-scan tap). */
+static void show_spinner(const char *status, const char *label_text)
 {
     lvgl_port_lock(0);
-    lv_obj_t *content = screen_reset(tr("saving_status"), COL_AMBER, true);
+    lv_obj_t *content = screen_reset(status, COL_AMBER, true);
 
     lv_obj_t *spinner = lv_spinner_create(content);
     lv_obj_set_size(spinner, 56, 56);
@@ -944,11 +947,21 @@ void ui_show_saving(void)
     lv_obj_set_style_arc_width(spinner, 5, LV_PART_INDICATOR);
 
     lv_obj_t *label = lv_label_create(content);
-    lv_label_set_text(label, tr("saving"));
+    lv_label_set_text(label, label_text);
     lv_obj_set_style_text_font(label, &gms_font_14, 0);
     lv_obj_set_style_text_color(label, COL_DIM, 0);
     lv_obj_align(label, LV_ALIGN_CENTER, 0, 28);
     lvgl_port_unlock();
+}
+
+void ui_show_saving(void)
+{
+    show_spinner(tr("saving_status"), tr("saving"));
+}
+
+void ui_show_loading(void)
+{
+    show_spinner(tr("loading_status"), tr("loading"));
 }
 
 static void flash_dismiss_cb(lv_event_t *e)
