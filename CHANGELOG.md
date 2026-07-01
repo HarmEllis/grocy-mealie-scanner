@@ -7,17 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-01
+
+On-device UX release: a large-key alphabetical keyboard replaces the cramped
+default, product actions gain a quantity picker with a before→after preview,
+the product page shows how many are already on the shopping list, and unknown
+barcodes can always be turned into a product.
+
 ### Added
 
+- Large-key A-Z on-screen keyboard shared by product search and product
+  creation, replacing LVGL's cramped default QWERTY. Equal-width keys, a
+  control bar (hide / 123 / #+= / space / confirm) with a per-screen confirm
+  label, and a hide key that collapses the keyboard so the search result list
+  grows to fill the space.
+- Quantity picker for product actions: tapping a purchase/open/consume/shopping
+  tile opens a confirm screen with a tappable predicted "before → after"
+  preview and a ~3 s auto-confirm countdown (amount 1). Tapping the preview
+  reveals a 1-9 keypad and a separate Confirm button; invalid amounts (consume
+  above stock, open above stock-opened) disable Confirm and skip auto-confirm.
+- Shopping-list count card: a fourth "LIST" stat on the product page shows how
+  many of the product are already on the shopping list, fed by a new
+  best-effort `shoppingListAmount` field on the device product (`apiVersion 3`).
+- Back button (top-left chevron) on the search screen, returning to idle and
+  matching the product screen's convention.
 - The search and product-name fields now show a blinking amber block cursor so
   it's clear where typed characters will land.
 
 ### Changed
 
+- "Create product" is now always offered on the unknown-barcode screen. It was
+  previously gated on Open Food Facts returning a name, leaving barcodes OFF
+  didn't recognise with only the search option. The OFF name pre-fills the
+  field when present; otherwise the create screen opens empty.
 - WiFi power-save (modem sleep) now defaults to **off** for lower HTTP latency
   and more reliable connections. It can still be enabled from the settings
   screen to save power. Existing devices that never toggled the setting also
   pick up the new default.
+- The device API capability version advertised on `/ping` is now `3`
+  (`shoppingListAmount` on device products); the demo client reports 3 to match.
+
+### Fixed
+
+- Product fetches from a search pick or last-scan tap now show the "Loading"
+  spinner instead of the "Saving" one, since they only read product info.
 
 ## [0.4.1] - 2026-06-28
 
@@ -196,7 +229,9 @@ flasher, and the first device API contract for grocy-mealie-sync.
   WiFi setup requests, URL truncation, invalid barcode lengths, stale timeout
   events, and mismatched create/link product response shapes.
 
-[Unreleased]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.4.1...v0.5.0
+[0.4.1]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.1.0...v0.2.0
