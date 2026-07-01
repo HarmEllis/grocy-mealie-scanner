@@ -1484,6 +1484,14 @@ static lv_obj_t *make_gms_keyboard(lv_obj_t *parent, lv_obj_t *ta, const char *c
 
     lv_keyboard_set_textarea(kb, ta);
     lv_obj_add_state(ta, LV_STATE_FOCUSED);
+
+    /* The default caret is invisible on our dark theme, so the user can't tell
+     * where typing lands. Draw a blinking amber block cursor with the covered
+     * glyph in the device colour so it stays readable underneath. */
+    lv_obj_set_style_bg_color(ta, COL_AMBER, LV_PART_CURSOR);
+    lv_obj_set_style_bg_opa(ta, LV_OPA_COVER, LV_PART_CURSOR);
+    lv_obj_set_style_text_color(ta, COL_DEVICE, LV_PART_CURSOR);
+    lv_obj_set_style_anim_duration(ta, 500, LV_PART_CURSOR);
     return kb;
 }
 

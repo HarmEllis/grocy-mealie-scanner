@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The search and product-name fields now show a blinking amber block cursor so
+  it's clear where typed characters will land.
+
 ### Changed
 
 - WiFi power-save (modem sleep) now defaults to **off** for lower HTTP latency
