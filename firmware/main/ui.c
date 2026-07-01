@@ -60,6 +60,7 @@ static lv_obj_t *s_sleep_overlay = NULL;
 /* Pending-state carried between screens */
 static char s_pending_barcode[API_BARCODE_LEN];
 static lv_obj_t *s_search_results_box;
+static lv_obj_t *s_search_kb;     /* search on-screen keyboard, for hide/show toggle */
 static lv_obj_t *s_touch_cal_target;
 /* Settings body, kept so toggling a setting (which rebuilds the screen) can
  * preserve the scroll position instead of snapping back to the top. */
@@ -282,6 +283,7 @@ static lv_obj_t *screen_reset(const char *status_text, lv_color_t dot_color,
     s_status_label = NULL;
     s_status_clock = NULL;
     s_search_results_box = NULL;
+    s_search_kb = NULL;
     s_touch_cal_target = NULL;
     s_settings_body = NULL;
     s_ota_bar = NULL;
@@ -1302,6 +1304,181 @@ void ui_show_not_found(const api_scan_result_t *scan)
     lvgl_port_unlock();
 }
 
+/* ------------------------------------------------------------------ */
+/* Big-key on-screen keyboard                                          */
+/* ------------------------------------------------------------------ */
+/*
+ * LVGL's default QWERTY packs 11-12 columns into our 212 px keyboard
+ * (~18 px keys) — too small to hit reliably on the 240 px panel. This is an
+ * alphabetical (A-Z) layout with wide keys, at most 7 columns wide:
+ *
+ *      a b c d e f g
+ *      h i j k l m n
+ *      o p q r s t u
+ *    [shift] v w x y z [<-]
+ *    [hide] [123] [#+=] [space] [confirm]
+ *
+ * We keep lv_keyboard (textarea binding, cursor, mode maps) but swap its
+ * default event handler for gms_kb_event_cb, so the control keys can show
+ * real glyphs (shift/backspace/hide arrows, "#+=") instead of the built-in
+ * "abc"/"1#" text buttons. The confirm key's label is per-screen ("Zoek"
+ * for search, a checkmark for the create form) via s_kb_confirm_buf, which
+ * the maps point at directly so its text can change without new map arrays.
+ * The hide key sends LV_EVENT_CANCEL; make_gms_keyboard hides the keyboard
+ * on it and re-shows it when the bound text field is tapped.
+ */
+
+#define KB_SHIFT LV_SYMBOL_UP     /* case toggle */
+#define KB_HIDE  LV_SYMBOL_DOWN   /* collapse the keyboard (to scroll results) */
+#define KB_NUM   "123"            /* -> number map */
+#define KB_SPEC  "#+="            /* -> special-character map */
+#define KB_ABC   "ABC"            /* -> back to letters */
+/* Control keys: fire on release, and never auto-repeat while held. */
+#define KB_C     (LV_BUTTONMATRIX_CTRL_NO_REPEAT | LV_BUTTONMATRIX_CTRL_CLICK_TRIG)
+
+/* Mutable so search ("Zoek") and the create form (checkmark) can relabel
+ * the confirm key; the maps below hold this pointer, so a strcpy suffices. */
+static char s_kb_confirm_buf[16] = "OK";
+
+/* A-Z letters run 7 per row; row 4 pairs shift + the last letters + backspace,
+ * and row 5 is the control bar (hide / mode / space / confirm). */
+static const char * const kb_map_lower[] = {
+    "a", "b", "c", "d", "e", "f", "g", "\n",
+    "h", "i", "j", "k", "l", "m", "n", "\n",
+    "o", "p", "q", "r", "s", "t", "u", "\n",
+    KB_SHIFT, "v", "w", "x", "y", "z", LV_SYMBOL_BACKSPACE, "\n",
+    KB_HIDE, KB_NUM, KB_SPEC, " ", s_kb_confirm_buf, ""
+};
+static const lv_buttonmatrix_ctrl_t kb_ctrl_lower[] = {
+    1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1,
+    KB_C | 1, 1, 1, 1, 1, 1, KB_C | 1,
+    KB_C | 2, KB_C | 2, KB_C | 2, 4, KB_C | LV_BUTTONMATRIX_CTRL_CHECKED | 3
+};
+
+static const char * const kb_map_upper[] = {
+    "A", "B", "C", "D", "E", "F", "G", "\n",
+    "H", "I", "J", "K", "L", "M", "N", "\n",
+    "O", "P", "Q", "R", "S", "T", "U", "\n",
+    KB_SHIFT, "V", "W", "X", "Y", "Z", LV_SYMBOL_BACKSPACE, "\n",
+    KB_HIDE, KB_NUM, KB_SPEC, " ", s_kb_confirm_buf, ""
+};
+static const lv_buttonmatrix_ctrl_t kb_ctrl_upper[] = {
+    1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1,
+    KB_C | LV_BUTTONMATRIX_CTRL_CHECKED | 1, 1, 1, 1, 1, 1, KB_C | 1,
+    KB_C | 2, KB_C | 2, KB_C | 2, 4, KB_C | LV_BUTTONMATRIX_CTRL_CHECKED | 3
+};
+
+static const char * const kb_map_num[] = {
+    "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "\n",
+    "-", "/", ":", ";", "(", ")", "&", "@", ".", ",", "\n",
+    "=", "+", "*", "#", "%", "_", "~", "'", "\"", "|", "\n",
+    KB_HIDE, KB_ABC, KB_SPEC, " ", LV_SYMBOL_BACKSPACE, s_kb_confirm_buf, ""
+};
+static const lv_buttonmatrix_ctrl_t kb_ctrl_num[] = {
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    KB_C | 2, KB_C | 2, KB_C | 2, 4, KB_C | 2, KB_C | LV_BUTTONMATRIX_CTRL_CHECKED | 3
+};
+
+static const char * const kb_map_spec[] = {
+    "!", "?", ".", ",", ":", ";", "'", "\"", "-", "_", "\n",
+    "(", ")", "[", "]", "{", "}", "<", ">", "/", "\\", "\n",
+    "&", "@", "#", "$", "%", "*", "+", "=", "~", "`", "\n",
+    KB_HIDE, KB_ABC, KB_NUM, " ", LV_SYMBOL_BACKSPACE, s_kb_confirm_buf, ""
+};
+static const lv_buttonmatrix_ctrl_t kb_ctrl_spec[] = {
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    KB_C | 2, KB_C | 2, KB_C | 2, 4, KB_C | 2, KB_C | LV_BUTTONMATRIX_CTRL_CHECKED | 3
+};
+
+static void gms_kb_event_cb(lv_event_t *e)
+{
+    lv_obj_t *kb = lv_event_get_current_target(e);
+    uint32_t id = lv_keyboard_get_selected_button(kb);
+    if (id == LV_BUTTONMATRIX_BUTTON_NONE) {
+        return;
+    }
+    const char *txt = lv_keyboard_get_button_text(kb, id);
+    if (txt == NULL) {
+        return;
+    }
+    lv_obj_t *ta = lv_keyboard_get_textarea(kb);
+
+    if (strcmp(txt, KB_SHIFT) == 0) {
+        lv_keyboard_set_mode(kb,
+            lv_keyboard_get_mode(kb) == LV_KEYBOARD_MODE_TEXT_UPPER
+                ? LV_KEYBOARD_MODE_TEXT_LOWER
+                : LV_KEYBOARD_MODE_TEXT_UPPER);
+    } else if (strcmp(txt, KB_NUM) == 0) {
+        lv_keyboard_set_mode(kb, LV_KEYBOARD_MODE_NUMBER);
+    } else if (strcmp(txt, KB_SPEC) == 0) {
+        lv_keyboard_set_mode(kb, LV_KEYBOARD_MODE_SPECIAL);
+    } else if (strcmp(txt, KB_ABC) == 0) {
+        lv_keyboard_set_mode(kb, LV_KEYBOARD_MODE_TEXT_LOWER);
+    } else if (strcmp(txt, KB_HIDE) == 0) {
+        lv_obj_send_event(kb, LV_EVENT_CANCEL, NULL);
+    } else if (strcmp(txt, LV_SYMBOL_BACKSPACE) == 0) {
+        if (ta != NULL) {
+            lv_textarea_delete_char(ta);
+        }
+    } else if (strcmp(txt, s_kb_confirm_buf) == 0) {
+        lv_obj_send_event(kb, LV_EVENT_READY, NULL);
+    } else if (ta != NULL) {
+        lv_textarea_add_text(ta, txt);
+    }
+}
+
+/* Hide/show plumbing for the KB_HIDE key: collapsing the keyboard frees the
+ * screen for scrolling; tapping the bound text field brings it back. */
+static void gms_kb_hide_cb(lv_event_t *e)
+{
+    lv_obj_add_flag(lv_event_get_target(e), LV_OBJ_FLAG_HIDDEN);
+}
+
+static void gms_kb_show_cb(lv_event_t *e)
+{
+    lv_obj_t *kb = lv_event_get_user_data(e);
+    if (kb != NULL) {
+        lv_obj_remove_flag(kb, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+/* Creates the shared big-key keyboard, bound to `ta`, with `confirm` as the
+ * label on the accent-coloured confirm key (fires LV_EVENT_READY). */
+static lv_obj_t *make_gms_keyboard(lv_obj_t *parent, lv_obj_t *ta, const char *confirm)
+{
+    snprintf(s_kb_confirm_buf, sizeof(s_kb_confirm_buf), "%s", confirm);
+
+    lv_obj_t *kb = lv_keyboard_create(parent);
+    lv_obj_set_size(kb, 212, 140);
+    lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);
+
+    lv_keyboard_set_map(kb, LV_KEYBOARD_MODE_TEXT_LOWER, kb_map_lower, kb_ctrl_lower);
+    lv_keyboard_set_map(kb, LV_KEYBOARD_MODE_TEXT_UPPER, kb_map_upper, kb_ctrl_upper);
+    lv_keyboard_set_map(kb, LV_KEYBOARD_MODE_NUMBER, kb_map_num, kb_ctrl_num);
+    lv_keyboard_set_map(kb, LV_KEYBOARD_MODE_SPECIAL, kb_map_spec, kb_ctrl_spec);
+    lv_keyboard_set_mode(kb, LV_KEYBOARD_MODE_TEXT_LOWER);
+
+    /* Replace the stock handler so shift/123/#+= use glyphs, not text buttons. */
+    lv_obj_remove_event_cb(kb, lv_keyboard_def_event_cb);
+    lv_obj_add_event_cb(kb, gms_kb_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
+
+    /* KB_HIDE collapses the keyboard; tapping the field restores it. */
+    lv_obj_add_event_cb(kb, gms_kb_hide_cb, LV_EVENT_CANCEL, NULL);
+    lv_obj_add_event_cb(ta, gms_kb_show_cb, LV_EVENT_CLICKED, kb);
+
+    lv_keyboard_set_textarea(kb, ta);
+    lv_obj_add_state(ta, LV_STATE_FOCUSED);
+    return kb;
+}
+
 /* --- proposal (create with editable name + on-screen keyboard) ------- */
 
 static lv_obj_t *s_proposal_ta;
@@ -1340,12 +1517,10 @@ void ui_show_proposal(const char *initial_name)
     lv_obj_t *btn = make_button(content, tr("create_product"), true, proposal_confirm_cb, NULL);
     lv_obj_set_pos(btn, 0, 76);
 
-    /* On-screen keyboard opens with the name field focused (user request) */
-    lv_obj_t *kb = lv_keyboard_create(content);
-    lv_obj_set_size(kb, 212, 140);
-    lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);
-    lv_keyboard_set_textarea(kb, s_proposal_ta);
-    lv_obj_add_state(s_proposal_ta, LV_STATE_FOCUSED);
+    /* On-screen keyboard opens with the name field focused (user request);
+     * its checkmark confirms just like the "Create product" button. */
+    lv_obj_t *kb = make_gms_keyboard(content, s_proposal_ta, LV_SYMBOL_OK);
+    lv_obj_add_event_cb(kb, proposal_confirm_cb, LV_EVENT_READY, NULL);
     lvgl_port_unlock();
 }
 
@@ -1365,6 +1540,25 @@ static void search_pick_cb(lv_event_t *e)
 {
     int id = (int)(uintptr_t)lv_event_get_user_data(e);
     emit(UI_EVT_SEARCH_PICK, 0, id, NULL);
+}
+
+/* The keyboard's hide key (make_gms_keyboard) toggles its own visibility;
+ * here we grow the result list into the freed space so it's easy to scroll,
+ * and shrink it back when the field is tapped and the keyboard returns. */
+static void search_results_grow_cb(lv_event_t *e)
+{
+    (void)e;
+    if (s_search_results_box != NULL) {
+        lv_obj_set_height(s_search_results_box, 226);
+    }
+}
+
+static void search_results_shrink_cb(lv_event_t *e)
+{
+    (void)e;
+    if (s_search_results_box != NULL) {
+        lv_obj_set_height(s_search_results_box, 86);
+    }
 }
 
 void ui_show_search(void)
@@ -1392,11 +1586,10 @@ void ui_show_search(void)
     lv_obj_set_style_pad_row(s_search_results_box, 6, 0);
     lv_obj_set_scroll_dir(s_search_results_box, LV_DIR_VER);
 
-    lv_obj_t *kb = lv_keyboard_create(content);
-    lv_obj_set_size(kb, 212, 140);
-    lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);
-    lv_keyboard_set_textarea(kb, s_search_ta);
-    lv_obj_add_event_cb(kb, search_submit_cb, LV_EVENT_READY, NULL);
+    s_search_kb = make_gms_keyboard(content, s_search_ta, tr("search_go"));
+    lv_obj_add_event_cb(s_search_kb, search_submit_cb, LV_EVENT_READY, NULL);
+    lv_obj_add_event_cb(s_search_kb, search_results_grow_cb, LV_EVENT_CANCEL, NULL);
+    lv_obj_add_event_cb(s_search_ta, search_results_shrink_cb, LV_EVENT_CLICKED, NULL);
     lvgl_port_unlock();
 }
 

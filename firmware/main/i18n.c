@@ -44,6 +44,7 @@
     X("create_in_grocy_as", "Create in Grocy as", "Maak in Grocy aan als") \
     X("create_product", "Create product", "Product aanmaken") \
     X("search", "Search", "Zoeken") \
+    X("search_go", "Search", "Zoek") \
     X("product_name_placeholder", "Product name...", "Productnaam...") \
     X("no_matches", "No matches", "Geen resultaten") \
     X("in_stock_fmt", "%s in stock", "%s op voorraad") \
