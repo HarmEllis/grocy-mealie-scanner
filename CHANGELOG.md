@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The search and product-name fields now show a blinking amber block cursor so
+  it's clear where typed characters will land.
+
+### Changed
+
+- WiFi power-save (modem sleep) now defaults to **off** for lower HTTP latency
+  and more reliable connections. It can still be enabled from the settings
+  screen to save power. Existing devices that never toggled the setting also
+  pick up the new default.
+
 ## [0.4.1] - 2026-06-28
 
 Documentation fix release.

@@ -8,6 +8,7 @@
  * post to a queue and return. */
 typedef enum {
     UI_EVT_ACTION_TILE,      /* arg.action: tile tapped on the product screen */
+    UI_EVT_ACTION_CONFIRM,   /* arg.action + arg.amount: quantity confirmed */
     UI_EVT_LINK_SUGGESTION,  /* arg.product_id */
     UI_EVT_OPEN_PROPOSAL,    /* "create <name>" chosen on the not-found screen */
     UI_EVT_PROPOSAL_CONFIRM, /* arg.text: confirmed (possibly edited) name */
@@ -40,6 +41,7 @@ typedef struct {
     ui_event_type_t type;
     api_action_t action;
     int product_id;
+    int amount;              /* quantity for UI_EVT_ACTION_CONFIRM */
     char text[API_NAME_LEN];
 } ui_event_t;
 
@@ -61,7 +63,13 @@ void ui_show_connecting(const char *message);
 void ui_show_idle(void);
 void ui_set_last_scan(const char *name, int product_id); /* idle footer */
 void ui_show_product(const api_product_t *product);
+/* Quantity picker shown after an action tile is tapped: a tappable predicted
+ * "before -> after" preview with a ~3s auto-confirm countdown (amount 1), and a
+ * 1-9 keypad + Confirm button when the preview is tapped. Emits
+ * UI_EVT_ACTION_CONFIRM (action + chosen amount). */
+void ui_show_action_confirm(api_action_t action, const api_product_t *product);
 void ui_show_saving(void);
+void ui_show_loading(void);
 void ui_show_flash(const api_action_result_t *result);
 void ui_show_not_found(const api_scan_result_t *scan);
 void ui_show_proposal(const char *initial_name);

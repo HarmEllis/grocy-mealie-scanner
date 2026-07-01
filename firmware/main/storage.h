@@ -32,7 +32,7 @@ typedef struct {
     uint8_t scanner_light; /* gm67_light_mode_t; default GM67_LIGHT_ON_SCAN (0) */
     uint8_t collimation;   /* gm67_collim_mode_t; default GM67_COLLIM_ON_SCAN (0) */
     uint32_t screen_timeout_seconds; /* backlight+panel sleep after idle; 0 = never */
-    bool    wifi_power_save; /* WiFi modem sleep; default on, can be disabled for lower latency */
+    bool    wifi_power_save; /* WiFi modem sleep; default off, can be enabled to save power */
     bool    api_insecure;  /* trust any HTTPS cert for the API only (OTA stays strict) */
     uint32_t touch_cal_x_left;
     uint32_t touch_cal_x_right;

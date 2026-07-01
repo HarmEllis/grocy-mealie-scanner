@@ -60,6 +60,7 @@ static lv_obj_t *s_sleep_overlay = NULL;
 /* Pending-state carried between screens */
 static char s_pending_barcode[API_BARCODE_LEN];
 static lv_obj_t *s_search_results_box;
+static lv_obj_t *s_search_kb;     /* search on-screen keyboard, for hide/show toggle */
 static lv_obj_t *s_touch_cal_target;
 /* Settings body, kept so toggling a setting (which rebuilds the screen) can
  * preserve the scroll position instead of snapping back to the top. */
@@ -68,6 +69,19 @@ static lv_obj_t *s_settings_body;
  * without rebuilding the screen on every percent tick. */
 static lv_obj_t *s_ota_bar;
 static lv_obj_t *s_ota_pct_label;
+
+/* Action-confirm (quantity picker) state. LVGL task only. The ~3s auto-confirm
+ * countdown is an lv_anim bound to s_confirm_bar, so deleting that object in
+ * screen_reset() cancels the countdown — no stray timer can fire after the
+ * screen is torn down. */
+static api_action_t s_confirm_action;
+static api_product_t s_confirm_product;
+static int s_confirm_amount;
+static lv_obj_t *s_confirm_preview; /* tappable "before -> after" label */
+static lv_obj_t *s_confirm_bar;     /* countdown bar (animated 100 -> 0)   */
+static lv_obj_t *s_confirm_hint;    /* "Tap to change amount" hint         */
+static lv_obj_t *s_confirm_keypad;  /* 1-9 buttonmatrix, hidden until tap  */
+static lv_obj_t *s_confirm_button;  /* Confirm button, hidden until tap    */
 
 static bool emit(ui_event_type_t type, api_action_t action, int product_id,
                  const char *text)
@@ -80,6 +94,16 @@ static bool emit(ui_event_type_t type, api_action_t action, int product_id,
     if (text != NULL) {
         strlcpy(evt.text, text, sizeof(evt.text));
     }
+    return s_cb(&evt);
+}
+
+static bool emit_confirm(api_action_t action, int amount)
+{
+    ui_event_t evt = {
+        .type = UI_EVT_ACTION_CONFIRM,
+        .action = action,
+        .amount = amount,
+    };
     return s_cb(&evt);
 }
 
@@ -175,6 +199,10 @@ void ui_cancel_sleep(void)
 /* Defined further down with the other not-found/search callbacks. */
 static void dismiss_cb(lv_event_t *e);
 static void open_search_cb(lv_event_t *e);
+/* Shared button factory, defined below; the action-confirm screen uses it
+ * before its definition. */
+static lv_obj_t *make_button(lv_obj_t *parent, const char *text, bool primary,
+                             lv_event_cb_t cb, void *user_data);
 
 static void last_scan_tap_cb(lv_event_t *e)
 {
@@ -255,10 +283,18 @@ static lv_obj_t *screen_reset(const char *status_text, lv_color_t dot_color,
     s_status_label = NULL;
     s_status_clock = NULL;
     s_search_results_box = NULL;
+    s_search_kb = NULL;
     s_touch_cal_target = NULL;
     s_settings_body = NULL;
     s_ota_bar = NULL;
     s_ota_pct_label = NULL;
+    /* lv_obj_clean above deleted the confirm widgets and the countdown anim
+     * bound to s_confirm_bar; just drop the dangling references. */
+    s_confirm_preview = NULL;
+    s_confirm_bar = NULL;
+    s_confirm_hint = NULL;
+    s_confirm_keypad = NULL;
+    s_confirm_button = NULL;
     s_status_shows_conn = false; /* only ui_show_idle re-enables this */
 
     lv_obj_set_style_bg_color(s_screen, COL_DEVICE, 0);
@@ -509,19 +545,19 @@ static void tile_event_cb(lv_event_t *e)
     emit(UI_EVT_ACTION_TILE, action, 0, NULL);
 }
 
-static lv_obj_t *make_stat_card(lv_obj_t *parent, int x, const char *label,
+static lv_obj_t *make_stat_card(lv_obj_t *parent, int x, int w, const char *label,
                                 double value, lv_color_t value_color)
 {
     lv_obj_t *card = lv_obj_create(parent);
     lv_obj_remove_style_all(card);
-    lv_obj_set_size(card, 70, 46);
+    lv_obj_set_size(card, w, 46);
     lv_obj_set_pos(card, x, 0);
     lv_obj_set_style_radius(card, 9, 0);
     lv_obj_set_style_bg_color(card, COL_CARD, 0);
     lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
     lv_obj_set_style_border_color(card, COL_BORDER, 0);
     lv_obj_set_style_border_width(card, 1, 0);
-    lv_obj_set_style_pad_all(card, 7, 0);
+    lv_obj_set_style_pad_all(card, 4, 0);
 
     lv_obj_t *l = lv_label_create(card);
     lv_label_set_text(l, label);
@@ -533,7 +569,7 @@ static lv_obj_t *make_stat_card(lv_obj_t *parent, int x, const char *label,
     fmt_amount(buf, sizeof(buf), value);
     lv_obj_t *v = lv_label_create(card);
     lv_label_set_text(v, buf);
-    lv_obj_set_style_text_font(v, &gms_font_20, 0);
+    lv_obj_set_style_text_font(v, &gms_font_18, 0);
     lv_obj_set_style_text_color(v, value_color, 0);
     lv_obj_align(v, LV_ALIGN_BOTTOM_LEFT, 0, 2);
     return card;
@@ -579,7 +615,10 @@ void ui_show_product(const api_product_t *product)
     lv_label_set_long_mode(sub, LV_LABEL_LONG_DOT);
     lv_obj_set_pos(sub, 0, 26);
 
-    /* Stat cards: In stock / Min / Opened (70px wide, 7px gaps).
+    /* Stat cards: In stock / Min / Opened / List (four 51px cards, 4px gaps:
+     * 51*4 + 4*3 = 216, exactly filling the container). Labels are kept short
+     * (<= 5 chars in both languages) so they fit the ~43px content width at the
+     * 10px font without clipping.
      * Vertical rhythm tightened slightly so the action grid still clears the
      * 320px canvas under the taller status bar (see grid offsets below). */
     lv_obj_t *cards = lv_obj_create(content);
@@ -589,9 +628,11 @@ void ui_show_product(const api_product_t *product)
     lv_color_t stock_color = product->stock_amount <= product->min_stock_amount
                                  ? COL_CORAL
                                  : COL_AMBER;
-    make_stat_card(cards, 0, tr("in_stock"), product->stock_amount, stock_color);
-    make_stat_card(cards, 73, tr("minimum"), product->min_stock_amount, COL_DIM);
-    make_stat_card(cards, 146, tr("opened_stat"), product->opened_amount, COL_GREEN);
+    make_stat_card(cards, 0, 51, tr("in_stock"), product->stock_amount, stock_color);
+    make_stat_card(cards, 55, 51, tr("minimum"), product->min_stock_amount, COL_DIM);
+    make_stat_card(cards, 110, 51, tr("opened_stat"), product->opened_amount, COL_GREEN);
+    make_stat_card(cards, 165, 51, tr("list_stat"), product->shopping_list_amount,
+                   COL_BLUE);
 
     /* 2x2 action grid (tiles 104x80, 8px gap). Start/row-gap/height trimmed from
      * 106/90/82 so the bottom row stays on-screen with the 30px status bar. */
@@ -636,13 +677,268 @@ void ui_show_product(const api_product_t *product)
 }
 
 /* ------------------------------------------------------------------ */
+/* Action confirm (quantity picker)                                    */
+/* ------------------------------------------------------------------ */
+
+/* Predicted transition for the confirm preview. Returns whether `amount` is a
+ * valid choice for the action given current stock, and fills before/after for
+ * display. When invalid (e.g. consuming more than is in stock), *after is the
+ * reachable boundary so the preview never shows an impossible number; the
+ * caller disables Confirm and skips auto-confirm instead. */
+static bool confirm_predict(api_action_t action, const api_product_t *p,
+                            int amount, double *before, double *after)
+{
+    switch (action) {
+    case API_ACTION_PURCHASE:
+        *before = p->stock_amount;
+        *after = p->stock_amount + amount;
+        return true;
+    case API_ACTION_CONSUME:
+        *before = p->stock_amount;
+        if (amount <= p->stock_amount) {
+            *after = p->stock_amount - amount;
+            return true;
+        }
+        *after = 0;
+        return false;
+    case API_ACTION_OPEN:
+        *before = p->opened_amount;
+        if (amount <= p->stock_amount - p->opened_amount) {
+            *after = p->opened_amount + amount;
+            return true;
+        }
+        *after = p->stock_amount;
+        return false;
+    case API_ACTION_SHOPPING_LIST:
+    default:
+        *before = p->shopping_list_amount;
+        *after = p->shopping_list_amount + amount;
+        return true;
+    }
+}
+
+/* Refresh the preview text + Confirm label/enabled-state for s_confirm_amount. */
+static void confirm_refresh(void)
+{
+    double before, after;
+    bool valid = confirm_predict(s_confirm_action, &s_confirm_product,
+                                 s_confirm_amount, &before, &after);
+    char b[16], a[16];
+    fmt_amount(b, sizeof(b), before);
+    fmt_amount(a, sizeof(a), after);
+    if (s_confirm_preview != NULL) {
+        lv_label_set_text_fmt(s_confirm_preview, tr("amount_change_fmt"), b, a);
+    }
+    if (s_confirm_button != NULL) {
+        lv_obj_t *lbl = lv_obj_get_child(s_confirm_button, 0);
+        if (lbl != NULL) {
+            lv_label_set_text_fmt(lbl, tr("confirm_amount_fmt"), s_confirm_amount);
+        }
+        if (valid) {
+            lv_obj_remove_state(s_confirm_button, LV_STATE_DISABLED);
+        } else {
+            lv_obj_add_state(s_confirm_button, LV_STATE_DISABLED);
+        }
+    }
+}
+
+/* Countdown bar tick (lv_anim exec). */
+static void confirm_bar_anim_cb(void *obj, int32_t v)
+{
+    lv_bar_set_value((lv_obj_t *)obj, v, LV_ANIM_OFF);
+}
+
+/* Auto-confirm: the countdown reached 0 without the user touching anything.
+ * Fire amount 1, but only if 1 is actually valid for this action/stock. */
+static void confirm_anim_done_cb(lv_anim_t *a)
+{
+    (void)a;
+    double before, after;
+    if (!confirm_predict(s_confirm_action, &s_confirm_product, 1, &before, &after)) {
+        return; /* nothing sensible to auto-do; wait for the user */
+    }
+    if (!emit_confirm(s_confirm_action, 1)) {
+        ESP_LOGW(TAG, "action-confirm queue full; auto-confirm dropped");
+    }
+}
+
+/* Tap on the preview: cancel the countdown and reveal the 1-9 keypad. */
+static void confirm_preview_cb(lv_event_t *e)
+{
+    (void)e;
+    lv_anim_delete(s_confirm_bar, confirm_bar_anim_cb);
+    if (s_confirm_bar != NULL) {
+        lv_obj_add_flag(s_confirm_bar, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (s_confirm_hint != NULL) {
+        lv_obj_add_flag(s_confirm_hint, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (s_confirm_keypad != NULL) {
+        lv_obj_remove_flag(s_confirm_keypad, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (s_confirm_button != NULL) {
+        lv_obj_remove_flag(s_confirm_button, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+static void confirm_keypad_cb(lv_event_t *e)
+{
+    lv_obj_t *btnm = lv_event_get_target(e);
+    uint32_t id = lv_buttonmatrix_get_selected_button(btnm);
+    if (id == LV_BUTTONMATRIX_BUTTON_NONE) {
+        return;
+    }
+    const char *txt = lv_buttonmatrix_get_button_text(btnm, id);
+    if (txt == NULL || txt[0] < '1' || txt[0] > '9') {
+        return;
+    }
+    s_confirm_amount = txt[0] - '0';
+    confirm_refresh();
+}
+
+static void confirm_button_cb(lv_event_t *e)
+{
+    (void)e;
+    double before, after;
+    if (!confirm_predict(s_confirm_action, &s_confirm_product, s_confirm_amount,
+                         &before, &after)) {
+        return; /* invalid amount; Confirm is disabled, ignore stray taps */
+    }
+    emit_confirm(s_confirm_action, s_confirm_amount);
+}
+
+void ui_show_action_confirm(api_action_t action, const api_product_t *product)
+{
+    static const char *const action_labels[] = {
+        [API_ACTION_PURCHASE] = "action_bought",
+        [API_ACTION_OPEN] = "action_opened",
+        [API_ACTION_CONSUME] = "action_consumed",
+        [API_ACTION_SHOPPING_LIST] = "action_shopping",
+    };
+    const lv_color_t action_colors[] = { COL_GREEN, COL_GOLD, COL_CORAL, COL_BLUE };
+    /* Static so the buttonmatrix can hold the pointer for the screen's life. */
+    static const char *const keypad_map[] = {
+        "1", "2", "3", "\n",
+        "4", "5", "6", "\n",
+        "7", "8", "9", "",
+    };
+
+    lvgl_port_lock(0);
+    s_confirm_action = action;
+    s_confirm_product = *product;
+    s_confirm_amount = 1;
+
+    lv_color_t color = action_colors[action];
+    lv_obj_t *content = screen_reset(tr(action_labels[action]), color, true);
+    lv_obj_set_style_pad_all(content, 12, 0);
+
+    /* Back chevron -> product screen; shift dot + label right to make room. */
+    lv_obj_align(s_status_dot, LV_ALIGN_LEFT_MID, 18, 0);
+    lv_obj_align(s_status_label, LV_ALIGN_LEFT_MID, 30, 0);
+    add_bar_icon(LV_SYMBOL_LEFT, LV_ALIGN_LEFT_MID, 0, dismiss_cb);
+
+    lv_obj_t *name = lv_label_create(content);
+    lv_label_set_text(name, product->name);
+    lv_obj_set_style_text_font(name, &gms_font_14, 0);
+    lv_obj_set_style_text_color(name, COL_DIM, 0);
+    lv_obj_set_width(name, 216);
+    lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_text_align(name, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(name, LV_ALIGN_TOP_MID, 0, 6);
+
+    /* Tappable predicted "before -> after". */
+    s_confirm_preview = lv_label_create(content);
+    lv_obj_set_style_text_font(s_confirm_preview, &gms_font_24, 0);
+    lv_obj_set_style_text_color(s_confirm_preview, color, 0);
+    lv_obj_align(s_confirm_preview, LV_ALIGN_TOP_MID, 0, 44);
+    lv_obj_add_flag(s_confirm_preview, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_ext_click_area(s_confirm_preview, 24);
+    lv_obj_add_event_cb(s_confirm_preview, confirm_preview_cb, LV_EVENT_CLICKED, NULL);
+
+    s_confirm_hint = lv_label_create(content);
+    lv_label_set_text(s_confirm_hint, tr("change_amount_hint"));
+    lv_obj_set_style_text_font(s_confirm_hint, &gms_font_12, 0);
+    lv_obj_set_style_text_color(s_confirm_hint, COL_DIM2, 0);
+    lv_obj_align(s_confirm_hint, LV_ALIGN_TOP_MID, 0, 84);
+
+    /* Countdown bar (animated full -> empty over ~3s). */
+    s_confirm_bar = lv_bar_create(content);
+    lv_obj_set_size(s_confirm_bar, 200, 6);
+    lv_obj_align(s_confirm_bar, LV_ALIGN_TOP_MID, 0, 108);
+    lv_obj_set_style_radius(s_confirm_bar, 3, 0);
+    lv_obj_set_style_bg_color(s_confirm_bar, COL_CARD, 0);
+    lv_obj_set_style_bg_opa(s_confirm_bar, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(s_confirm_bar, 3, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(s_confirm_bar, color, LV_PART_INDICATOR);
+    lv_bar_set_range(s_confirm_bar, 0, 100);
+    lv_bar_set_value(s_confirm_bar, 100, LV_ANIM_OFF);
+
+    /* Keypad (hidden until the preview is tapped). */
+    s_confirm_keypad = lv_buttonmatrix_create(content);
+    lv_buttonmatrix_set_map(s_confirm_keypad, keypad_map);
+    lv_buttonmatrix_set_one_checked(s_confirm_keypad, true);
+    for (uint32_t i = 0; i < 9; i++) {
+        lv_buttonmatrix_set_button_ctrl(s_confirm_keypad, i,
+                                        LV_BUTTONMATRIX_CTRL_CHECKABLE);
+    }
+    /* set_one_checked() only clears extra checks; it does not select a default.
+     * Mark button 0 ("1") checked so the revealed keypad matches the initial
+     * s_confirm_amount of 1. */
+    lv_buttonmatrix_set_button_ctrl(s_confirm_keypad, 0, LV_BUTTONMATRIX_CTRL_CHECKED);
+    lv_obj_set_size(s_confirm_keypad, 216, 132);
+    lv_obj_align(s_confirm_keypad, LV_ALIGN_TOP_MID, 0, 78);
+    lv_obj_set_style_bg_opa(s_confirm_keypad, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(s_confirm_keypad, 0, 0);
+    lv_obj_set_style_pad_all(s_confirm_keypad, 0, 0);
+    lv_obj_set_style_pad_gap(s_confirm_keypad, 6, 0);
+    lv_obj_set_style_text_font(s_confirm_keypad, &gms_font_20, LV_PART_ITEMS);
+    lv_obj_set_style_bg_color(s_confirm_keypad, COL_CARD, LV_PART_ITEMS);
+    lv_obj_set_style_bg_opa(s_confirm_keypad, LV_OPA_COVER, LV_PART_ITEMS);
+    lv_obj_set_style_radius(s_confirm_keypad, 9, LV_PART_ITEMS);
+    lv_obj_set_style_text_color(s_confirm_keypad, COL_TEXT, LV_PART_ITEMS);
+    lv_obj_set_style_bg_color(s_confirm_keypad, color, LV_PART_ITEMS | LV_STATE_CHECKED);
+    lv_obj_set_style_text_color(s_confirm_keypad, COL_DEVICE,
+                                LV_PART_ITEMS | LV_STATE_CHECKED);
+    lv_obj_add_flag(s_confirm_keypad, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_event_cb(s_confirm_keypad, confirm_keypad_cb,
+                        LV_EVENT_VALUE_CHANGED, NULL);
+
+    /* Confirm button (hidden until the preview is tapped). */
+    s_confirm_button = make_button(content, "", true, confirm_button_cb, NULL);
+    lv_obj_align(s_confirm_button, LV_ALIGN_BOTTOM_MID, 0, -4);
+    lv_obj_add_flag(s_confirm_button, LV_OBJ_FLAG_HIDDEN);
+
+    confirm_refresh();
+
+    /* Start the auto-confirm countdown only when the default amount (1) is a
+     * valid action; otherwise the user must change it or back out. */
+    double before, after;
+    if (confirm_predict(action, product, 1, &before, &after)) {
+        lv_anim_t anim;
+        lv_anim_init(&anim);
+        lv_anim_set_var(&anim, s_confirm_bar);
+        lv_anim_set_values(&anim, 100, 0);
+        lv_anim_set_duration(&anim, 3000);
+        lv_anim_set_exec_cb(&anim, confirm_bar_anim_cb);
+        lv_anim_set_completed_cb(&anim, confirm_anim_done_cb);
+        lv_anim_start(&anim);
+    } else {
+        lv_obj_add_flag(s_confirm_bar, LV_OBJ_FLAG_HIDDEN);
+    }
+    lvgl_port_unlock();
+}
+
+/* ------------------------------------------------------------------ */
 /* Saving / flash / error                                              */
 /* ------------------------------------------------------------------ */
 
-void ui_show_saving(void)
+/* Shared spinner screen for in-flight requests. Callers pass the header status
+ * and the label under the spinner (e.g. "Saving" for writes, "Loading" for the
+ * read-only product fetch behind a search pick or last-scan tap). */
+static void show_spinner(const char *status, const char *label_text)
 {
     lvgl_port_lock(0);
-    lv_obj_t *content = screen_reset(tr("saving_status"), COL_AMBER, true);
+    lv_obj_t *content = screen_reset(status, COL_AMBER, true);
 
     lv_obj_t *spinner = lv_spinner_create(content);
     lv_obj_set_size(spinner, 56, 56);
@@ -653,11 +949,21 @@ void ui_show_saving(void)
     lv_obj_set_style_arc_width(spinner, 5, LV_PART_INDICATOR);
 
     lv_obj_t *label = lv_label_create(content);
-    lv_label_set_text(label, tr("saving"));
+    lv_label_set_text(label, label_text);
     lv_obj_set_style_text_font(label, &gms_font_14, 0);
     lv_obj_set_style_text_color(label, COL_DIM, 0);
     lv_obj_align(label, LV_ALIGN_CENTER, 0, 28);
     lvgl_port_unlock();
+}
+
+void ui_show_saving(void)
+{
+    show_spinner(tr("saving_status"), tr("saving"));
+}
+
+void ui_show_loading(void)
+{
+    show_spinner(tr("loading_status"), tr("loading"));
 }
 
 static void flash_dismiss_cb(lv_event_t *e)
@@ -975,10 +1281,18 @@ void ui_show_not_found(const api_scan_result_t *scan)
         lv_obj_align(btn, LV_ALIGN_TOP_MID, 0, y);
         y += 49;
     }
-    if (scan->has_external_name) {
+    /* Create-a-product is always offered: OFF's name pre-fills the field when
+     * present, otherwise the user types it on the (now larger) keyboard. */
+    {
         char text[96];
-        snprintf(text, sizeof(text), tr("create_quoted_fmt"), scan->external_name);
-        lv_obj_t *btn = make_button(content, text, scan->suggestion_count == 0,
+        const char *label;
+        if (scan->has_external_name) {
+            snprintf(text, sizeof(text), tr("create_quoted_fmt"), scan->external_name);
+            label = text;
+        } else {
+            label = tr("create_product");
+        }
+        lv_obj_t *btn = make_button(content, label, scan->suggestion_count == 0,
                                     open_proposal_cb, NULL);
         lv_obj_align(btn, LV_ALIGN_TOP_MID, 0, y);
         y += scan->suggestion_count == 0 ? 49 : 47;
@@ -996,6 +1310,189 @@ void ui_show_not_found(const api_scan_result_t *scan)
     lv_obj_set_ext_click_area(again, 12);
     lv_obj_add_event_cb(again, dismiss_cb, LV_EVENT_CLICKED, NULL);
     lvgl_port_unlock();
+}
+
+/* ------------------------------------------------------------------ */
+/* Big-key on-screen keyboard                                          */
+/* ------------------------------------------------------------------ */
+/*
+ * LVGL's default QWERTY packs 11-12 columns into our 212 px keyboard
+ * (~18 px keys) — too small to hit reliably on the 240 px panel. This is an
+ * alphabetical (A-Z) layout with wide keys, at most 7 columns wide:
+ *
+ *      a b c d e f g
+ *      h i j k l m n
+ *      o p q r s t u
+ *    [shift] v w x y z [<-]
+ *    [hide] [123] [#+=] [space] [confirm]
+ *
+ * We keep lv_keyboard (textarea binding, cursor, mode maps) but swap its
+ * default event handler for gms_kb_event_cb, so the control keys can show
+ * real glyphs (shift/backspace/hide arrows, "#+=") instead of the built-in
+ * "abc"/"1#" text buttons. The confirm key's label is per-screen ("Zoek"
+ * for search, a checkmark for the create form) via s_kb_confirm_buf, which
+ * the maps point at directly so its text can change without new map arrays.
+ * The hide key sends LV_EVENT_CANCEL; make_gms_keyboard hides the keyboard
+ * on it and re-shows it when the bound text field is tapped.
+ */
+
+#define KB_SHIFT LV_SYMBOL_UP     /* case toggle */
+#define KB_HIDE  LV_SYMBOL_DOWN   /* collapse the keyboard (to scroll results) */
+#define KB_NUM   "123"            /* -> number map */
+#define KB_SPEC  "#+="            /* -> special-character map */
+#define KB_ABC   "ABC"            /* -> back to letters */
+/* Control keys: fire on release, and never auto-repeat while held. */
+#define KB_C     (LV_BUTTONMATRIX_CTRL_NO_REPEAT | LV_BUTTONMATRIX_CTRL_CLICK_TRIG)
+
+/* Mutable so search ("Zoek") and the create form (checkmark) can relabel
+ * the confirm key; the maps below hold this pointer, so a strcpy suffices. */
+static char s_kb_confirm_buf[16] = "OK";
+
+/* A-Z letters run 7 per row; row 4 pairs shift + the last letters + backspace,
+ * and row 5 is the control bar (hide / mode / space / confirm). */
+static const char * const kb_map_lower[] = {
+    "a", "b", "c", "d", "e", "f", "g", "\n",
+    "h", "i", "j", "k", "l", "m", "n", "\n",
+    "o", "p", "q", "r", "s", "t", "u", "\n",
+    KB_SHIFT, "v", "w", "x", "y", "z", LV_SYMBOL_BACKSPACE, "\n",
+    KB_HIDE, KB_NUM, KB_SPEC, " ", s_kb_confirm_buf, ""
+};
+static const lv_buttonmatrix_ctrl_t kb_ctrl_lower[] = {
+    1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1,
+    KB_C | 1, 1, 1, 1, 1, 1, KB_C | 1,
+    KB_C | 2, KB_C | 2, KB_C | 2, 4, KB_C | LV_BUTTONMATRIX_CTRL_CHECKED | 3
+};
+
+static const char * const kb_map_upper[] = {
+    "A", "B", "C", "D", "E", "F", "G", "\n",
+    "H", "I", "J", "K", "L", "M", "N", "\n",
+    "O", "P", "Q", "R", "S", "T", "U", "\n",
+    KB_SHIFT, "V", "W", "X", "Y", "Z", LV_SYMBOL_BACKSPACE, "\n",
+    KB_HIDE, KB_NUM, KB_SPEC, " ", s_kb_confirm_buf, ""
+};
+static const lv_buttonmatrix_ctrl_t kb_ctrl_upper[] = {
+    1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1,
+    KB_C | LV_BUTTONMATRIX_CTRL_CHECKED | 1, 1, 1, 1, 1, 1, KB_C | 1,
+    KB_C | 2, KB_C | 2, KB_C | 2, 4, KB_C | LV_BUTTONMATRIX_CTRL_CHECKED | 3
+};
+
+static const char * const kb_map_num[] = {
+    "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "\n",
+    "-", "/", ":", ";", "(", ")", "&", "@", ".", ",", "\n",
+    "=", "+", "*", "#", "%", "_", "~", "'", "\"", "|", "\n",
+    KB_HIDE, KB_ABC, KB_SPEC, " ", LV_SYMBOL_BACKSPACE, s_kb_confirm_buf, ""
+};
+static const lv_buttonmatrix_ctrl_t kb_ctrl_num[] = {
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    KB_C | 2, KB_C | 2, KB_C | 2, 4, KB_C | 2, KB_C | LV_BUTTONMATRIX_CTRL_CHECKED | 3
+};
+
+static const char * const kb_map_spec[] = {
+    "!", "?", ".", ",", ":", ";", "'", "\"", "-", "_", "\n",
+    "(", ")", "[", "]", "{", "}", "<", ">", "/", "\\", "\n",
+    "&", "@", "#", "$", "%", "*", "+", "=", "~", "`", "\n",
+    KB_HIDE, KB_ABC, KB_NUM, " ", LV_SYMBOL_BACKSPACE, s_kb_confirm_buf, ""
+};
+static const lv_buttonmatrix_ctrl_t kb_ctrl_spec[] = {
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    KB_C | 2, KB_C | 2, KB_C | 2, 4, KB_C | 2, KB_C | LV_BUTTONMATRIX_CTRL_CHECKED | 3
+};
+
+static void gms_kb_event_cb(lv_event_t *e)
+{
+    lv_obj_t *kb = lv_event_get_current_target(e);
+    uint32_t id = lv_keyboard_get_selected_button(kb);
+    if (id == LV_BUTTONMATRIX_BUTTON_NONE) {
+        return;
+    }
+    const char *txt = lv_keyboard_get_button_text(kb, id);
+    if (txt == NULL) {
+        return;
+    }
+    lv_obj_t *ta = lv_keyboard_get_textarea(kb);
+
+    if (strcmp(txt, KB_SHIFT) == 0) {
+        lv_keyboard_set_mode(kb,
+            lv_keyboard_get_mode(kb) == LV_KEYBOARD_MODE_TEXT_UPPER
+                ? LV_KEYBOARD_MODE_TEXT_LOWER
+                : LV_KEYBOARD_MODE_TEXT_UPPER);
+    } else if (strcmp(txt, KB_NUM) == 0) {
+        lv_keyboard_set_mode(kb, LV_KEYBOARD_MODE_NUMBER);
+    } else if (strcmp(txt, KB_SPEC) == 0) {
+        lv_keyboard_set_mode(kb, LV_KEYBOARD_MODE_SPECIAL);
+    } else if (strcmp(txt, KB_ABC) == 0) {
+        lv_keyboard_set_mode(kb, LV_KEYBOARD_MODE_TEXT_LOWER);
+    } else if (strcmp(txt, KB_HIDE) == 0) {
+        lv_obj_send_event(kb, LV_EVENT_CANCEL, NULL);
+    } else if (strcmp(txt, LV_SYMBOL_BACKSPACE) == 0) {
+        if (ta != NULL) {
+            lv_textarea_delete_char(ta);
+        }
+    } else if (strcmp(txt, s_kb_confirm_buf) == 0) {
+        lv_obj_send_event(kb, LV_EVENT_READY, NULL);
+    } else if (ta != NULL) {
+        lv_textarea_add_text(ta, txt);
+    }
+}
+
+/* Hide/show plumbing for the KB_HIDE key: collapsing the keyboard frees the
+ * screen for scrolling; tapping the bound text field brings it back. */
+static void gms_kb_hide_cb(lv_event_t *e)
+{
+    lv_obj_add_flag(lv_event_get_target(e), LV_OBJ_FLAG_HIDDEN);
+}
+
+static void gms_kb_show_cb(lv_event_t *e)
+{
+    lv_obj_t *kb = lv_event_get_user_data(e);
+    if (kb != NULL) {
+        lv_obj_remove_flag(kb, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+/* Creates the shared big-key keyboard, bound to `ta`, with `confirm` as the
+ * label on the accent-coloured confirm key (fires LV_EVENT_READY). */
+static lv_obj_t *make_gms_keyboard(lv_obj_t *parent, lv_obj_t *ta, const char *confirm)
+{
+    snprintf(s_kb_confirm_buf, sizeof(s_kb_confirm_buf), "%s", confirm);
+
+    lv_obj_t *kb = lv_keyboard_create(parent);
+    lv_obj_set_size(kb, 212, 140);
+    lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);
+
+    lv_keyboard_set_map(kb, LV_KEYBOARD_MODE_TEXT_LOWER, kb_map_lower, kb_ctrl_lower);
+    lv_keyboard_set_map(kb, LV_KEYBOARD_MODE_TEXT_UPPER, kb_map_upper, kb_ctrl_upper);
+    lv_keyboard_set_map(kb, LV_KEYBOARD_MODE_NUMBER, kb_map_num, kb_ctrl_num);
+    lv_keyboard_set_map(kb, LV_KEYBOARD_MODE_SPECIAL, kb_map_spec, kb_ctrl_spec);
+    lv_keyboard_set_mode(kb, LV_KEYBOARD_MODE_TEXT_LOWER);
+
+    /* Replace the stock handler so shift/123/#+= use glyphs, not text buttons. */
+    lv_obj_remove_event_cb(kb, lv_keyboard_def_event_cb);
+    lv_obj_add_event_cb(kb, gms_kb_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
+
+    /* KB_HIDE collapses the keyboard; tapping the field restores it. */
+    lv_obj_add_event_cb(kb, gms_kb_hide_cb, LV_EVENT_CANCEL, NULL);
+    lv_obj_add_event_cb(ta, gms_kb_show_cb, LV_EVENT_CLICKED, kb);
+
+    lv_keyboard_set_textarea(kb, ta);
+    lv_obj_add_state(ta, LV_STATE_FOCUSED);
+
+    /* The default caret is invisible on our dark theme, so the user can't tell
+     * where typing lands. Draw a blinking amber block cursor with the covered
+     * glyph in the device colour so it stays readable underneath. */
+    lv_obj_set_style_bg_color(ta, COL_AMBER, LV_PART_CURSOR);
+    lv_obj_set_style_bg_opa(ta, LV_OPA_COVER, LV_PART_CURSOR);
+    lv_obj_set_style_text_color(ta, COL_DEVICE, LV_PART_CURSOR);
+    lv_obj_set_style_anim_duration(ta, 500, LV_PART_CURSOR);
+    return kb;
 }
 
 /* --- proposal (create with editable name + on-screen keyboard) ------- */
@@ -1036,12 +1533,10 @@ void ui_show_proposal(const char *initial_name)
     lv_obj_t *btn = make_button(content, tr("create_product"), true, proposal_confirm_cb, NULL);
     lv_obj_set_pos(btn, 0, 76);
 
-    /* On-screen keyboard opens with the name field focused (user request) */
-    lv_obj_t *kb = lv_keyboard_create(content);
-    lv_obj_set_size(kb, 212, 140);
-    lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);
-    lv_keyboard_set_textarea(kb, s_proposal_ta);
-    lv_obj_add_state(s_proposal_ta, LV_STATE_FOCUSED);
+    /* On-screen keyboard opens with the name field focused (user request);
+     * its checkmark confirms just like the "Create product" button. */
+    lv_obj_t *kb = make_gms_keyboard(content, s_proposal_ta, LV_SYMBOL_OK);
+    lv_obj_add_event_cb(kb, proposal_confirm_cb, LV_EVENT_READY, NULL);
     lvgl_port_unlock();
 }
 
@@ -1063,11 +1558,35 @@ static void search_pick_cb(lv_event_t *e)
     emit(UI_EVT_SEARCH_PICK, 0, id, NULL);
 }
 
+/* The keyboard's hide key (make_gms_keyboard) toggles its own visibility;
+ * here we grow the result list into the freed space so it's easy to scroll,
+ * and shrink it back when the field is tapped and the keyboard returns. */
+static void search_results_grow_cb(lv_event_t *e)
+{
+    (void)e;
+    if (s_search_results_box != NULL) {
+        lv_obj_set_height(s_search_results_box, 226);
+    }
+}
+
+static void search_results_shrink_cb(lv_event_t *e)
+{
+    (void)e;
+    if (s_search_results_box != NULL) {
+        lv_obj_set_height(s_search_results_box, 86);
+    }
+}
+
 void ui_show_search(void)
 {
     lvgl_port_lock(0);
     lv_obj_t *content = screen_reset(tr("search"), COL_BLUE, true);
     lv_obj_set_style_pad_hor(content, 14, 0);
+
+    /* Back chevron → idle; shift the dot + label right to make room. */
+    lv_obj_align(s_status_dot, LV_ALIGN_LEFT_MID, 18, 0);
+    lv_obj_align(s_status_label, LV_ALIGN_LEFT_MID, 30, 0);
+    add_bar_icon(LV_SYMBOL_LEFT, LV_ALIGN_LEFT_MID, 0, dismiss_cb);
 
     s_search_ta = lv_textarea_create(content);
     lv_textarea_set_one_line(s_search_ta, true);
@@ -1088,11 +1607,10 @@ void ui_show_search(void)
     lv_obj_set_style_pad_row(s_search_results_box, 6, 0);
     lv_obj_set_scroll_dir(s_search_results_box, LV_DIR_VER);
 
-    lv_obj_t *kb = lv_keyboard_create(content);
-    lv_obj_set_size(kb, 212, 140);
-    lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);
-    lv_keyboard_set_textarea(kb, s_search_ta);
-    lv_obj_add_event_cb(kb, search_submit_cb, LV_EVENT_READY, NULL);
+    s_search_kb = make_gms_keyboard(content, s_search_ta, tr("search_go"));
+    lv_obj_add_event_cb(s_search_kb, search_submit_cb, LV_EVENT_READY, NULL);
+    lv_obj_add_event_cb(s_search_kb, search_results_grow_cb, LV_EVENT_CANCEL, NULL);
+    lv_obj_add_event_cb(s_search_ta, search_results_shrink_cb, LV_EVENT_CLICKED, NULL);
     lvgl_port_unlock();
 }
 

@@ -69,6 +69,7 @@ typedef struct {
 typedef enum {
     APP_IDLE,
     APP_PRODUCT,    /* s_product valid */
+    APP_ACTION_CONFIRM, /* quantity picker for a tapped action; s_product valid */
     APP_FLASH,      /* action confirmed, waiting for dwell timeout */
     APP_NOT_FOUND,  /* s_scan valid (status UNKNOWN) */
     APP_PROPOSAL,   /* create-product proposal, s_scan valid */
@@ -374,11 +375,13 @@ static void handle_ota_check_manual(void)
 static void handle_scan(const char *barcode)
 {
     if (apply_provision_qr(barcode)) return;
-    /* A fresh scan takes over from any screen except an open keyboard:
-     * losing typed input to an accidental re-scan would be worse. */
+    /* A fresh scan takes over from any screen except an open keyboard or the
+     * quantity picker: losing typed input / a half-chosen amount to an
+     * accidental re-scan would be worse. */
     if (s_state == APP_PROPOSAL || s_state == APP_SEARCH ||
         s_state == APP_TOUCH_CAL || s_state == APP_OTA_PROMPT ||
-        s_state == APP_OTA_PROGRESS || s_state == APP_CONN_ERROR) {
+        s_state == APP_OTA_PROGRESS || s_state == APP_CONN_ERROR ||
+        s_state == APP_ACTION_CONFIRM) {
         return;
     }
 
@@ -434,13 +437,13 @@ static void handle_scan(const char *barcode)
     }
 }
 
-static void handle_action(api_action_t action)
+static void handle_action(api_action_t action, int amount)
 {
     ui_show_saving();
 
     char err[API_ERR_LEN];
     api_action_result_t result;
-    esp_err_t ret = api_action(s_product.id, action, &result, err);
+    esp_err_t ret = api_action(s_product.id, action, amount, &result, err);
     if (ret != ESP_OK) {
         show_error(err); /* incl. 409 insufficient stock with server text */
         return;
@@ -468,7 +471,7 @@ static void handle_link(int product_id)
  * show it exactly as a scan would. */
 static void handle_pick_product(int product_id)
 {
-    ui_show_saving();
+    ui_show_loading();
 
     char err[API_ERR_LEN];
     api_product_t product;
@@ -549,7 +552,13 @@ static void handle_ui(const ui_event_t *evt)
     switch (evt->type) {
     case UI_EVT_ACTION_TILE:
         if (s_state == APP_PRODUCT) {
-            handle_action(evt->action);
+            ui_show_action_confirm(evt->action, &s_product);
+            enter_state(APP_ACTION_CONFIRM, SCREEN_TIMEOUT_MS);
+        }
+        break;
+    case UI_EVT_ACTION_CONFIRM:
+        if (s_state == APP_ACTION_CONFIRM) {
+            handle_action(evt->action, evt->amount);
         }
         break;
     case UI_EVT_LINK_SUGGESTION:
@@ -707,6 +716,8 @@ static void handle_ui(const ui_event_t *evt)
             show_settings();
         } else if (s_state == APP_CONN_ERROR) {
             try_connect(); /* tap = retry now; stays on error if still down */
+        } else if (s_state == APP_ACTION_CONFIRM) {
+            show_product(&s_product); /* back chevron: return to the product */
         } else {
             go_idle();
         }

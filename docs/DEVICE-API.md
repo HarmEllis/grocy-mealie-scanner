@@ -33,13 +33,16 @@ appropriate 4xx/5xx status.
 Connectivity + auth check used by the firmware at boot and as a health probe.
 
 ```json
-{ "ok": true, "app": "grocy-mealie-sync", "version": "1.9.0", "apiVersion": 2 }
+{ "ok": true, "app": "grocy-mealie-sync", "version": "1.9.0", "apiVersion": 3 }
 ```
 
 - `apiVersion` is the device-API capability version. The firmware defaults to
   `1` when the field is absent (older servers) and uses it to hide features the
   server does not yet support — e.g. the on-device product-search affordance is
   shown only when `apiVersion >= 2` (adds `GET /products/{id}`).
+  - `apiVersion >= 3` advertises `shoppingListAmount` on device products
+    (the shopping-list count card). The field is best-effort and defaults to
+    `0`, so the card degrades gracefully on a pre-`3` server rather than 404ing.
 
 ### `GET /api/device/v1/scan/{barcode}`
 
@@ -57,7 +60,8 @@ Look up a scanned barcode. Exactly one of the two response variants:
     "stockAmount": 3,
     "openedAmount": 1,
     "minStockAmount": 2,
-    "onShoppingList": false
+    "onShoppingList": false,
+    "shoppingListAmount": 0
   }
 }
 ```
@@ -88,8 +92,12 @@ flow):
   helpers; at most 5 entries, best first, score in `[0,1]`.
 - Grocy barcode lookup is capped server-side below the firmware HTTP timeout;
   an upstream timeout returns `504 {"error":"Grocy barcode lookup timed out after 6500ms"}`.
-- `onShoppingList` is best-effort. Slow or unreachable Mealie shopping-list
-  checks must fall back to `false` instead of delaying the product screen.
+- `onShoppingList` and `shoppingListAmount` are best-effort and come from one
+  Mealie shopping-list check. Slow or unreachable checks must fall back to
+  `false` / `0` instead of delaying the product screen. `shoppingListAmount` is
+  the summed quantity of the matching unchecked rows; `onShoppingList` stays
+  independent of it (a quantity-0 row is still on the list, so it can be `true`
+  while `shoppingListAmount` is `0`).
 - Invalid barcode (non `[0-9A-Za-z_-]{4,64}`) → `400`.
 
 ### `POST /api/device/v1/products/{id}/action`
@@ -165,7 +173,7 @@ envelope):
 ```json
 { "id": 42, "name": "Heinz Tomato Ketchup", "quantityUnit": "Bottle",
   "stockAmount": 3, "openedAmount": 1, "minStockAmount": 2,
-  "onShoppingList": false }
+  "onShoppingList": false, "shoppingListAmount": 0 }
 ```
 
 Invalid id (non-positive / non-integer) → `400`; unknown product → `404`.
@@ -194,7 +202,7 @@ in a `{"product": …}` envelope, unlike `scan`) — same field shape as the
 ```json
 { "id": 99, "name": "Tomato Ketchup", "quantityUnit": "Piece",
   "stockAmount": 0, "openedAmount": 0, "minStockAmount": 0,
-  "onShoppingList": false }
+  "onShoppingList": false, "shoppingListAmount": 0 }
 ```
 
 ### `POST /api/device/v1/products/{id}/barcodes`
