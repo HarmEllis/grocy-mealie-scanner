@@ -51,7 +51,7 @@ esp_err_t storage_load(app_config_t *cfg)
     cfg->scanner_light = 0; /* GM67_LIGHT_ON_SCAN */
     cfg->collimation = 0;   /* GM67_COLLIM_ON_SCAN */
     cfg->screen_timeout_seconds = 60; /* default: sleep after 60 s idle */
-    cfg->wifi_power_save = true;
+    cfg->wifi_power_save = false;
     nvs_handle_t h;
     esp_err_t err = nvs_open(NS, NVS_READONLY, &h);
     if (err == ESP_ERR_NVS_NOT_FOUND) {
@@ -71,7 +71,7 @@ esp_err_t storage_load(app_config_t *cfg)
         cfg->scanner_light = (uint8_t)load_u32(h, "scan_lgt", 0);
         cfg->collimation = (uint8_t)load_u32(h, "collim", 0);
         cfg->screen_timeout_seconds = load_u32(h, "scrn_to", 60);
-        cfg->wifi_power_save = load_flag(h, "wifi_ps", true);
+        cfg->wifi_power_save = load_flag(h, "wifi_ps", false);
         cfg->api_insecure = load_flag(h, "api_insec", false);
         cfg->touch_cal_x_left = load_u32(h, "tcal_xl", 0);
         cfg->touch_cal_x_right = load_u32(h, "tcal_xr", 0);
