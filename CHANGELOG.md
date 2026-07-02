@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-07-02
+
+Wording fix for the unknown-barcode flow: the create action no longer says
+"Create in Grocy", which implied a Grocy-only result. It now reads "Add" /
+"Toevoegen" everywhere, matching the server behaviour where a scanned product
+is added to both Grocy and Mealie.
+
+### Changed
+
+- Relabel the unknown-barcode create flow from "Create in Grocy" / "Maak in
+  Grocy aan" to the neutral "Add" / "Toevoegen" (button, name-field label,
+  quoted-name button, and the failure message), so the UI no longer implies a
+  Grocy-only create.
+
 ## [0.5.0] - 2026-07-01
 
 On-device UX release: a large-key alphabetical keyboard replaces the cramped
@@ -229,7 +243,8 @@ flasher, and the first device API contract for grocy-mealie-sync.
   WiFi setup requests, URL truncation, invalid barcode lengths, stale timeout
   events, and mismatched create/link product response shapes.
 
-[Unreleased]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.3.0...v0.4.0
