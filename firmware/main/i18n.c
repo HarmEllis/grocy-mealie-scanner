@@ -37,12 +37,12 @@
     X("unknown", "Unknown", "Onbekend") \
     X("product_not_found", "Product not found", "Product niet gevonden") \
     X("link_to_fmt", "Link to %s", "Koppel aan %s") \
-    X("create_quoted_fmt", "Create \"%s\"", "Maak \"%s\" aan") \
+    X("create_quoted_fmt", "Add \"%s\"", "\"%s\" toevoegen") \
     X("search_products", "Search products", "Producten zoeken") \
     X("scan_again", "Scan again", "Opnieuw scannen") \
     X("new_product", "New product", "Nieuw product") \
-    X("create_in_grocy_as", "Create in Grocy as", "Maak in Grocy aan als") \
-    X("create_product", "Create product", "Product aanmaken") \
+    X("create_in_grocy_as", "Add as", "Toevoegen als") \
+    X("create_product", "Add", "Toevoegen") \
     X("search", "Search", "Zoeken") \
     X("search_go", "Search", "Zoek") \
     X("product_name_placeholder", "Product name...", "Productnaam...") \
@@ -127,7 +127,7 @@
     X("lookup_failed", "Lookup failed", "Opzoeken mislukt") \
     X("action_failed", "Action failed", "Actie mislukt") \
     X("search_failed", "Search failed", "Zoeken mislukt") \
-    X("create_failed", "Create failed", "Aanmaken mislukt") \
+    X("create_failed", "Add failed", "Toevoegen mislukt") \
     X("link_failed", "Link failed", "Koppelen mislukt") \
     X("demo_unknown_product", "Demo: unknown product", "Demo: onbekend product") \
     X("demo_catalogue_full", "Demo: catalogue full", "Demo: catalogus is vol") \
