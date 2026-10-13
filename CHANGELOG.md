@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-13
+
+Browse release: products can now be picked without typing, by Mealie label
+or by first letter, and the home screen gets large Search and Browse buttons.
+Browse needs a grocy-mealie-sync that reports device API version 4; with an
+older server the scanner shows only the Search button and works as before.
+
+### Added
+
+- Browse ("Bladeren") from the home screen: choose "By label" or "A-Z", then
+  a product list for the picked label or letter; tapping a product opens the
+  normal product page. Labels are listed by name with the "unlabeled" bucket
+  last, and long label names wrap to at most two lines before they are cut
+  with "...".
+- A-Z grid with large 44×44 keys, five per row; letters without products are
+  dimmed and cannot be tapped.
+- Product lists show the first 20 products with a "+N more" hint when a label
+  or letter holds more.
+- "Browse failed" error message, and browse support in the offline demo image.
+- Device API v4 contract in `docs/DEVICE-API.md` (`GET /labels`,
+  `GET /letters`, `GET /products?labelId=` / `?letter=`).
+
+### Changed
+
+- Home screen: Search and Browse are large buttons under the status bar
+  instead of small status-bar icons, side by side when both are available and
+  full width when only one is. The scan area moves down slightly to make room.
+
 ## [0.5.1] - 2026-07-02
 
 Wording fix for the unknown-barcode flow: the create action no longer says
@@ -244,6 +272,7 @@ flasher, and the first device API contract for grocy-mealie-sync.
   events, and mismatched create/link product response shapes.
 
 [Unreleased]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.5.1...HEAD
+[0.6.0]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.4.0...v0.4.1
