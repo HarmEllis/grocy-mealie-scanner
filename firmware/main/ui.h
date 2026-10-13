@@ -15,6 +15,12 @@ typedef enum {
     UI_EVT_OPEN_SEARCH,
     UI_EVT_SEARCH_QUERY,     /* arg.text */
     UI_EVT_SEARCH_PICK,      /* arg.product_id */
+    UI_EVT_OPEN_BROWSE,          /* "Browse" button tapped on the idle screen */
+    UI_EVT_BROWSE_MODE_LABELS,   /* "By label" tapped on the browse-index screen */
+    UI_EVT_BROWSE_MODE_LETTERS,  /* "A-Z" tapped on the browse-index screen */
+    UI_EVT_BROWSE_LABEL_PICK,    /* arg.text: label id tapped on the labels screen */
+    UI_EVT_BROWSE_LETTER_PICK,   /* arg.text: single letter ('A'-'Z' or '#') tapped */
+    UI_EVT_BROWSE_PICK,          /* arg.product_id: a row tapped in a browse list */
     UI_EVT_LAST_SCAN_TAP,    /* last-scan name tapped on idle; arg.product_id */
     UI_EVT_DISMISS,          /* "scan again" / flash tapped / back to idle */
     UI_EVT_OPEN_SETTINGS,    /* gear tapped on the idle status bar */
@@ -56,6 +62,10 @@ void ui_set_connected(bool connected);
  * server advertises the products/{id} capability (apiVersion >= 2). Takes effect
  * on the next ui_show_idle(); set it before returning to idle. */
 void ui_set_search_available(bool available);
+/* Gate the idle "Browse" button: pass true only when the connected
+ * server advertises the browse capability (apiVersion >= 4). Same contract
+ * as ui_set_search_available above. */
+void ui_set_browse_available(bool available);
 
 /* Screens. Safe to call from any task (locks LVGL internally). */
 void ui_show_provisioning(const char *ap_ssid, const char *ap_pass);
@@ -75,6 +85,15 @@ void ui_show_not_found(const api_scan_result_t *scan);
 void ui_show_proposal(const char *initial_name);
 void ui_show_search(void);
 void ui_show_search_results(const api_search_result_t *results);
+/* Browse: choose label/A-Z, then a scrollable list per pick. Each screen
+ * owns a back-chevron to its parent (see docs/DEVICE-API.md and AGENTS.md for
+ * the intended navigation: index -> labels/letters -> list -> index -> idle). */
+void ui_show_browse_index(void);
+void ui_show_browse_labels(const api_label_list_t *labels);
+void ui_show_browse_letters(const api_letter_list_t *letters);
+/* `title` is the picked label's name or the picked letter (a 1-char string),
+ * shown as the list's heading. */
+void ui_show_browse_list(const char *title, const api_browse_result_t *results);
 void ui_show_error(const char *message);
 /* Like ui_show_error but for a not-yet-connected state: the hint reads "tap to
  * retry" and a "WiFi & API setup" affordance is shown. A tap still emits

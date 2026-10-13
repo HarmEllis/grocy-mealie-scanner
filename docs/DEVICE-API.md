@@ -33,7 +33,7 @@ appropriate 4xx/5xx status.
 Connectivity + auth check used by the firmware at boot and as a health probe.
 
 ```json
-{ "ok": true, "app": "grocy-mealie-sync", "version": "1.9.0", "apiVersion": 3 }
+{ "ok": true, "app": "grocy-mealie-sync", "version": "1.9.0", "apiVersion": 4 }
 ```
 
 - `apiVersion` is the device-API capability version. The firmware defaults to
@@ -43,6 +43,9 @@ Connectivity + auth check used by the firmware at boot and as a health probe.
   - `apiVersion >= 3` advertises `shoppingListAmount` on device products
     (the shopping-list count card). The field is best-effort and defaults to
     `0`, so the card degrades gracefully on a pre-`3` server rather than 404ing.
+  - `apiVersion >= 4` advertises `GET /labels`, `GET /letters`, and the
+    `labelId`/`letter` filters on `GET /products` (the home-screen "Browse"
+    button: browse by label / by A-Z).
 
 ### `GET /api/device/v1/scan/{barcode}`
 
@@ -157,7 +160,93 @@ Grocy products; `limit` defaults to 8, max 25.
 }
 ```
 
-Empty `query` → `400`.
+Empty `query` → `400`. A duplicate parameter key (e.g. `?query=a&query=b`), an
+unknown parameter, or `offset` combined with `query` (not part of this
+variant's contract, only the `labelId`/`letter` variants below) → `400`.
+
+### `GET /api/device/v1/products?labelId=<id>&offset=<n>&limit=<n>`
+
+### `GET /api/device/v1/products?letter=<A-Z|#>&offset=<n>&limit=<n>`
+
+Requires `apiVersion >= 4`. Backs the home-screen browse flow's
+product lists: all products carrying a Mealie label, or all products whose
+name starts with a given letter.
+
+Exactly one of `query`, `labelId`, `letter` is required — `0` or `2+` present,
+or any other query parameter present, → `400`. `offset` defaults to `0` (must
+be a non-negative integer); `limit` defaults to `20`, **max `20`** (matches the
+firmware's fixed-size result array — unlike the `query` variant above, which
+allows up to 25). `letter` must be exactly one uppercase ASCII letter, or the
+literal `#` (products whose normalized name doesn't start with `a`-`z` — a
+digit, symbol, or non-Latin name). `labelId` is either a real Mealie label id
+(see `GET /labels` below) or the reserved sentinel `unlabeled`.
+
+```json
+{
+  "results": [
+    { "id": 42, "name": "Heinz Tomato Ketchup", "stockAmount": 3 }
+  ],
+  "total": 3,
+  "offset": 0,
+  "hasMore": false
+}
+```
+
+v1 firmware requests only `offset=0` (no infinite scroll); when `total` is
+greater than the number of `results` returned, it shows a static "+N more"
+hint instead of silently truncating the bucket. Building the label/letter
+index snapshot (Grocy products/stock + all Mealie foods/labels) is capped at
+a 6s internal deadline, comfortably inside the firmware's 8s HTTP timeout; an
+exceeded deadline → `504`.
+
+### `GET /api/device/v1/labels`
+
+Requires `apiVersion >= 4`. Lists Mealie labels with at least one mapped
+Grocy product, for the "Browse → By label" picker.
+
+```json
+{
+  "labels": [
+    { "id": "3f2504e0-4f89-11d3-9a0c-0305e82c3301", "name": "Broodbeleg", "count": 5 },
+    { "id": "unlabeled", "name": "Overig", "count": 12 }
+  ]
+}
+```
+
+- Not paginated. Real labels are ranked by product count and capped at the
+  top **19**; `unlabeled` (the reserved sentinel for products with no
+  resolvable Mealie label — no mapping, a stale mapping, or a food with no
+  label) is **outside that cap**, always appended last when its count is
+  `> 0`, so products without a label always have a label-browse entry.
+  v1 limitations (documented, not bugs): a household with more than 19
+  labels does not see its least-used labels here, so products whose labels
+  all fall outside the top 19 have no label-browse entry; and every browse
+  list shows only its first page (20 products, see `total`). Such products
+  are still reachable via text search (and via A-Z when they are within the
+  first 20 of their letter). Label and product names are truncated
+  server-side to a UTF-8-safe 63-byte cap (matching the firmware's
+  `API_NAME_LEN`). That cap alone does not bound the response size (JSON
+  escaping can grow a byte to six), so the server must also enforce the
+  serialized-size budget below.
+- Display order (after the count-based selection above): label name
+  ascending, case/diacritic-insensitive; `unlabeled` always last.
+
+### `GET /api/device/v1/letters`
+
+Requires `apiVersion >= 4`. Lists all 27 A-Z + `#` buckets with their product
+counts, for the "Browse → A-Z" grid (buckets with `count: 0` are shown
+dimmed/disabled by the firmware, not omitted).
+
+```json
+{
+  "letters": [
+    { "letter": "A", "count": 4 },
+    { "letter": "B", "count": 0 },
+    "...",
+    { "letter": "#", "count": 1 }
+  ]
+}
+```
 
 ### `GET /api/device/v1/products/{id}`
 
@@ -221,7 +310,16 @@ in the error body: `{"error":"…","product":{"id":42,"name":"…"}}`.
 ## Firmware-driven design constraints
 
 - Responses must stay small (< 2 KB) and flat; the firmware parses with cJSON
-  on a memory-constrained device.
+  on a memory-constrained device. The `/labels`, `/letters`, and browse
+  variants of `GET /products` are capped (19+1 labels, 20 products, 27
+  letters), but the hard limit is on the serialized body: every response,
+  measured as encoded UTF-8 JSON bytes including escaping, must stay under
+  the firmware's 4096-byte `MAX_RESPONSE` buffer (larger bodies are cut off
+  and fail to parse). The server must enforce this, e.g. by stripping
+  control characters from names before the 63-byte truncation or by
+  budgeting names by their encoded size, and its contract tests must cover
+  escape-heavy and multi-byte names. 2 KB remains the target for realistic
+  households; 4096 is the ceiling that must never be crossed.
 - Every state the UI can land in after a network call must be derivable from
   a single response (no follow-up requests needed to render).
 - Endpoints must respond before the firmware request timeout (8 s). The scan

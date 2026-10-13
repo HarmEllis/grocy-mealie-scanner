@@ -47,6 +47,11 @@
     X("search_go", "Search", "Zoek") \
     X("product_name_placeholder", "Product name...", "Productnaam...") \
     X("no_matches", "No matches", "Geen resultaten") \
+    X("browse", "Browse", "Bladeren") \
+    X("browse_by_label", "By label", "Op label") \
+    X("browse_by_letter", "A-Z", "A-Z") \
+    X("no_labels", "No labels", "Geen labels") \
+    X("more_items_fmt", "+%d more", "+%d meer") \
     X("in_stock_fmt", "%s in stock", "%s op voorraad") \
     X("back", "Back", "Terug") \
     X("settings", "Settings", "Instellingen") \
@@ -127,6 +132,7 @@
     X("lookup_failed", "Lookup failed", "Opzoeken mislukt") \
     X("action_failed", "Action failed", "Actie mislukt") \
     X("search_failed", "Search failed", "Zoeken mislukt") \
+    X("browse_failed", "Browse failed", "Bladeren mislukt") \
     X("create_failed", "Add failed", "Toevoegen mislukt") \
     X("link_failed", "Link failed", "Koppelen mislukt") \
     X("demo_unknown_product", "Demo: unknown product", "Demo: onbekend product") \

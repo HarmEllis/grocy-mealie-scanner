@@ -74,6 +74,11 @@ typedef enum {
     APP_NOT_FOUND,  /* s_scan valid (status UNKNOWN) */
     APP_PROPOSAL,   /* create-product proposal, s_scan valid */
     APP_SEARCH,     /* product search, s_scan valid */
+    APP_BROWSE_INDEX,   /* browse: choose "By label" or "A-Z" */
+    APP_BROWSE_LABELS,  /* s_browse_labels valid */
+    APP_BROWSE_LETTERS, /* s_browse_letters valid */
+    APP_BROWSE_LIST,    /* products in a picked label/letter; s_browse_list_from_labels
+                         * says which of the above to return to on dismiss */
     APP_ERROR,      /* error screen, tap dismisses */
     APP_CONN_ERROR, /* not connected to the API; tap/timer retries, never idles */
     APP_SETTINGS,   /* on-device settings (feedback and language) */
@@ -98,6 +103,14 @@ static api_scan_result_t s_scan;
  * (no barcode in flight): a pick fetches the product and shows it as if scanned.
  * false = from the unknown-barcode flow: a pick links s_scan.barcode instead. */
 static bool s_search_from_idle;
+/* Browse caches: populated on the forward fetch (idle -> Browse ->
+ * Labels/A-Z) and read back on backward navigation from APP_BROWSE_LIST (no
+ * re-fetch) as well as for the picked label's display name. Simply
+ * overwritten on the next forward fetch; never read stale across sessions
+ * because they're only consulted while still on a browse screen. */
+static api_label_list_t s_browse_labels;
+static api_letter_list_t s_browse_letters;
+static bool s_browse_list_from_labels;
 /* Loaded once at boot; the settings screen mutates feedback and language and
  * persists them, so it lives at file scope rather than on app_main's stack. */
 static app_config_t s_cfg;
@@ -235,6 +248,9 @@ static void go_idle(void)
      * the products/{id} capability (apiVersion >= 2); otherwise the affordance
      * would lead to a 404. Refreshed from the last ping on every return to idle. */
     ui_set_search_available(api_server_api_version() >= 2);
+    /* Browse (by label / A-Z) needs the v4 contract (GET /labels,
+     * /letters, and the labelId/letter filters on GET /products). */
+    ui_set_browse_available(api_server_api_version() >= 4);
     ui_show_idle();
     enter_state(APP_IDLE, 0);
 }
@@ -381,7 +397,9 @@ static void handle_scan(const char *barcode)
     if (s_state == APP_PROPOSAL || s_state == APP_SEARCH ||
         s_state == APP_TOUCH_CAL || s_state == APP_OTA_PROMPT ||
         s_state == APP_OTA_PROGRESS || s_state == APP_CONN_ERROR ||
-        s_state == APP_ACTION_CONFIRM) {
+        s_state == APP_ACTION_CONFIRM || s_state == APP_BROWSE_INDEX ||
+        s_state == APP_BROWSE_LABELS || s_state == APP_BROWSE_LETTERS ||
+        s_state == APP_BROWSE_LIST) {
         return;
     }
 
@@ -513,6 +531,96 @@ static void handle_search_query(const char *query)
     enter_state(APP_SEARCH, SCREEN_TIMEOUT_MS);
 }
 
+static void show_browse_index(void)
+{
+    ui_show_browse_index();
+    enter_state(APP_BROWSE_INDEX, SCREEN_TIMEOUT_MS);
+}
+
+static void handle_browse_labels(void)
+{
+    ui_show_loading();
+    char err[API_ERR_LEN];
+    esp_err_t ret = api_list_labels(&s_browse_labels, err);
+    if (ret != ESP_OK) {
+        show_error(err);
+        return;
+    }
+    ui_show_browse_labels(&s_browse_labels);
+    enter_state(APP_BROWSE_LABELS, SCREEN_TIMEOUT_MS);
+}
+
+static void handle_browse_letters(void)
+{
+    ui_show_loading();
+    char err[API_ERR_LEN];
+    esp_err_t ret = api_list_letters(&s_browse_letters, err);
+    if (ret != ESP_OK) {
+        show_error(err);
+        return;
+    }
+    ui_show_browse_letters(&s_browse_letters);
+    enter_state(APP_BROWSE_LETTERS, SCREEN_TIMEOUT_MS);
+}
+
+/* `label_id` must exist in the cached s_browse_labels — a defensive check
+ * against a stale queued event referencing a label from a previous fetch,
+ * on top of the state guard in handle_ui(). Also resolves the display name
+ * for the list heading without a second round trip. */
+static void handle_browse_label_pick(const char *label_id)
+{
+    const char *name = NULL;
+    for (int i = 0; i < s_browse_labels.count; i++) {
+        if (strcmp(s_browse_labels.items[i].id, label_id) == 0) {
+            name = s_browse_labels.items[i].name;
+            break;
+        }
+    }
+    if (name == NULL) {
+        return;
+    }
+
+    ui_show_loading();
+    char err[API_ERR_LEN];
+    api_browse_result_t results;
+    esp_err_t ret = api_list_products_by_label(label_id, &results, err);
+    if (ret != ESP_OK) {
+        show_error(err);
+        return;
+    }
+    s_browse_list_from_labels = true;
+    ui_show_browse_list(name, &results);
+    enter_state(APP_BROWSE_LIST, SCREEN_TIMEOUT_MS);
+}
+
+/* Same stale-event defense as handle_browse_label_pick, against s_browse_letters. */
+static void handle_browse_letter_pick(char letter)
+{
+    bool valid = false;
+    for (int i = 0; i < s_browse_letters.count; i++) {
+        if (s_browse_letters.items[i].letter == letter) {
+            valid = true;
+            break;
+        }
+    }
+    if (!valid) {
+        return;
+    }
+
+    ui_show_loading();
+    char err[API_ERR_LEN];
+    api_browse_result_t results;
+    esp_err_t ret = api_list_products_by_letter(letter, &results, err);
+    if (ret != ESP_OK) {
+        show_error(err);
+        return;
+    }
+    s_browse_list_from_labels = false;
+    char title[2] = { letter, '\0' };
+    ui_show_browse_list(title, &results);
+    enter_state(APP_BROWSE_LIST, SCREEN_TIMEOUT_MS);
+}
+
 static void finish_touch_calibration(void)
 {
     int32_t x_left = (s_touch_cal_samples[0].x + s_touch_cal_samples[2].x) / 2;
@@ -586,6 +694,40 @@ static void handle_ui(const ui_event_t *evt)
             handle_pick_product(evt->product_id);
         } else {
             handle_link(evt->product_id);
+        }
+        break;
+    case UI_EVT_OPEN_BROWSE:
+        if (s_state == APP_IDLE) {
+            show_browse_index();
+        }
+        break;
+    case UI_EVT_BROWSE_MODE_LABELS:
+        if (s_state == APP_BROWSE_INDEX) {
+            handle_browse_labels();
+        }
+        break;
+    case UI_EVT_BROWSE_MODE_LETTERS:
+        if (s_state == APP_BROWSE_INDEX) {
+            handle_browse_letters();
+        }
+        break;
+    case UI_EVT_BROWSE_LABEL_PICK:
+        if (s_state == APP_BROWSE_LABELS) {
+            handle_browse_label_pick(evt->text);
+        }
+        break;
+    case UI_EVT_BROWSE_LETTER_PICK:
+        if (s_state == APP_BROWSE_LETTERS && evt->text[0] != '\0') {
+            handle_browse_letter_pick(evt->text[0]);
+        }
+        break;
+    case UI_EVT_BROWSE_PICK:
+        /* Reuses the idle search-pick flow unchanged: fetches the full
+         * product and shows it exactly as if scanned. Its dismiss returns
+         * straight to idle, not back into the browse list — intentional,
+         * consistent with the existing search-pick behavior. */
+        if (s_state == APP_BROWSE_LIST) {
+            handle_pick_product(evt->product_id);
         }
         break;
     case UI_EVT_LAST_SCAN_TAP:
@@ -718,6 +860,18 @@ static void handle_ui(const ui_event_t *evt)
             try_connect(); /* tap = retry now; stays on error if still down */
         } else if (s_state == APP_ACTION_CONFIRM) {
             show_product(&s_product); /* back chevron: return to the product */
+        } else if (s_state == APP_BROWSE_LIST) {
+            /* Re-show the cached labels/letters screen — no re-fetch, matches
+             * the data the user already saw before drilling into this list. */
+            if (s_browse_list_from_labels) {
+                ui_show_browse_labels(&s_browse_labels);
+                enter_state(APP_BROWSE_LABELS, SCREEN_TIMEOUT_MS);
+            } else {
+                ui_show_browse_letters(&s_browse_letters);
+                enter_state(APP_BROWSE_LETTERS, SCREEN_TIMEOUT_MS);
+            }
+        } else if (s_state == APP_BROWSE_LABELS || s_state == APP_BROWSE_LETTERS) {
+            show_browse_index();
         } else {
             go_idle();
         }

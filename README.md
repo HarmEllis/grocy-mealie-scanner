@@ -115,7 +115,7 @@ Day-to-day use:
 
 | Screen | Interaction |
 |--------|-------------|
-| Idle | Scan a barcode, or tap the gear for on-device settings (scanner beep, status light, language, screen timeout); display blanks after the configured idle time (default 60 s) — tap to wake |
+| Idle | Scan a barcode; tap **Search** to find a product by name or **Browse** to pick one by label or A-Z (each button appears when the server supports it); or tap the gear for on-device settings (scanner beep, status light, language, screen timeout); display blanks after the configured idle time (default 60 s) — tap to wake |
 | Product | Tap **Bought / Opened / Consumed / Shopping**; a coloured flash confirms |
 | Unknown barcode | Link to a suggested or searched product, or create from the OpenFoodFacts proposal |
 
