@@ -41,6 +41,7 @@ static lv_obj_t *s_status_clock;
 static bool s_connected;
 static bool s_status_shows_conn; /* true only while the status bar shows Connected/Offline (idle) */
 static bool s_search_available;  /* idle shows the product-search icon only when set */
+static bool s_browse_available;  /* idle shows the "Browse" button only when set */
 static char s_last_scan_name[API_NAME_LEN];
 static char s_last_scan_time[8];
 static int  s_last_scan_id;      /* product id for re-opening the product page */
@@ -199,6 +200,7 @@ void ui_cancel_sleep(void)
 /* Defined further down with the other not-found/search callbacks. */
 static void dismiss_cb(lv_event_t *e);
 static void open_search_cb(lv_event_t *e);
+static void open_browse_cb(lv_event_t *e);
 /* Shared button factory, defined below; the action-confirm screen uses it
  * before its definition. */
 static lv_obj_t *make_button(lv_obj_t *parent, const char *text, bool primary,
@@ -238,8 +240,8 @@ static lv_obj_t *add_bar_icon(const char *symbol, lv_align_t align, int dx,
     lv_obj_set_style_text_color(icon, COL_DIM, 0);
     lv_obj_align(icon, align, dx, 0);
     lv_obj_add_flag(icon, LV_OBJ_FLAG_CLICKABLE);
-    /* Modest hit padding: large enough to ease tapping, small enough that two
-     * adjacent bar icons (search + gear on idle) keep disjoint hit boxes. */
+    /* Modest hit padding: large enough to ease tapping, small enough that a
+     * bar icon never reaches the status text or the clock next to it. */
     lv_obj_set_ext_click_area(icon, 10);
     lv_obj_add_event_cb(icon, cb, LV_EVENT_CLICKED, NULL);
     return icon;
@@ -350,6 +352,32 @@ static void scanline_anim_cb(void *obj, int32_t v)
     lv_obj_set_y((lv_obj_t *)obj, v);
 }
 
+/* A large home-screen action ("Search" / "Browse") right under the status
+ * bar: a 42 px card-style button, either half width (both shown) or full
+ * width (only one shown). */
+static void make_home_action(lv_obj_t *parent, const char *text, lv_event_cb_t cb,
+                             int x, int w)
+{
+    lv_obj_t *btn = lv_obj_create(parent);
+    lv_obj_remove_style_all(btn);
+    lv_obj_set_size(btn, w, 42);
+    lv_obj_set_pos(btn, x, 10);
+    lv_obj_set_style_radius(btn, 9, 0);
+    lv_obj_set_style_bg_color(btn, COL_CARD, 0);
+    lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(btn, COL_BORDER2, 0);
+    lv_obj_set_style_border_width(btn, 1, 0);
+    lv_obj_set_style_bg_color(btn, lv_color_hex(0x2a2a2f), LV_STATE_PRESSED);
+    lv_obj_add_flag(btn, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *label = lv_label_create(btn);
+    lv_label_set_text(label, text);
+    lv_obj_set_style_text_font(label, &gms_font_16, 0);
+    lv_obj_set_style_text_color(label, COL_TEXT, 0);
+    lv_obj_center(label);
+}
+
 void ui_show_idle(void)
 {
     lvgl_port_lock(0);
@@ -360,23 +388,31 @@ void ui_show_idle(void)
                                      s_connected ? COL_GREEN : COL_CORAL, true);
     s_status_shows_conn = true; /* this status bar tracks live connection state */
 
-    /* Right side: settings gear, plus an optional product-search icon to its
-     * left when the server advertises it. Nudge the clock left to clear them. */
-    if (s_search_available) {
-        /* search icon sits well left of the gear so their (padded) hit boxes
-         * stay disjoint; the gear is added last and would otherwise win taps. */
-        lv_obj_align(s_status_clock, LV_ALIGN_RIGHT_MID, -76, 0);
-        add_bar_icon(LV_SYMBOL_KEYBOARD, LV_ALIGN_RIGHT_MID, -44, open_search_cb);
-    } else {
-        lv_obj_align(s_status_clock, LV_ALIGN_RIGHT_MID, -22, 0);
-    }
+    /* Status bar: the clock just left of the settings gear, in the same spot
+     * whatever the server supports. */
+    lv_obj_align(s_status_clock, LV_ALIGN_RIGHT_MID, -22, 0);
     add_bar_icon(LV_SYMBOL_SETTINGS, LV_ALIGN_RIGHT_MID, 0, open_settings_cb);
+
+    /* Product search and browse as large buttons under the status bar
+     * when the server advertises them (independently gated): side by side
+     * when both are shown, full width when only one is. The scan area then
+     * moves down by 16 px; it still clears the last-scan footer. */
+    int shift = 0;
+    if (s_search_available && s_browse_available) {
+        make_home_action(content, tr("search"), open_search_cb, 12, 104);
+        make_home_action(content, tr("browse"), open_browse_cb, 124, 104);
+        shift = 16;
+    } else if (s_search_available || s_browse_available) {
+        make_home_action(content, s_search_available ? tr("search") : tr("browse"),
+                         s_search_available ? open_search_cb : open_browse_cb, 12, 216);
+        shift = 16;
+    }
 
     /* Scan frame: 128x96, rounded, amber corner brackets + animated line */
     lv_obj_t *frame = lv_obj_create(content);
     lv_obj_remove_style_all(frame);
     lv_obj_set_size(frame, 128, 96);
-    lv_obj_align(frame, LV_ALIGN_TOP_MID, 0, 52);
+    lv_obj_align(frame, LV_ALIGN_TOP_MID, 0, 52 + shift);
     lv_obj_set_style_radius(frame, 14, 0);
     lv_obj_set_style_bg_color(frame, lv_color_hex(0x121214), 0);
     lv_obj_set_style_bg_opa(frame, LV_OPA_COVER, 0);
@@ -440,14 +476,14 @@ void ui_show_idle(void)
     lv_label_set_text(title, tr("ready_to_scan"));
     lv_obj_set_style_text_font(title, &gms_font_20, 0);
     lv_obj_set_style_text_color(title, COL_TEXT, 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 172);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 172 + shift);
 
     lv_obj_t *hint = lv_label_create(content);
     lv_label_set_text(hint, tr("point_scanner"));
     lv_obj_set_style_text_font(hint, &gms_font_12, 0);
     lv_obj_set_style_text_color(hint, COL_DIM, 0);
     lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(hint, LV_ALIGN_TOP_MID, 0, 200);
+    lv_obj_align(hint, LV_ALIGN_TOP_MID, 0, 200 + shift);
 
     /* Footer: last scan */
     if (s_last_scan_name[0] != '\0') {
@@ -515,6 +551,11 @@ void ui_set_search_available(bool available)
     /* Read by ui_show_idle when it rebuilds; the app sets this from the last
      * ping's apiVersion before each return to idle, so no live relayout needed. */
     s_search_available = available;
+}
+
+void ui_set_browse_available(bool available)
+{
+    s_browse_available = available;
 }
 
 void ui_set_connected(bool connected)
@@ -1614,6 +1655,49 @@ void ui_show_search(void)
     lvgl_port_unlock();
 }
 
+/* Shared by ui_show_search_results and the browse list screen below: a
+ * tappable 212x34 card row showing a product's name and stock. `parent` may
+ * be an already-rendered container updated in place (search) or a freshly
+ * built one owned by screen_reset (browse) — this helper only appends. */
+static lv_obj_t *build_product_row(lv_obj_t *parent, const api_product_ref_t *ref,
+                                   lv_event_cb_t cb, void *user_data)
+{
+    lv_obj_t *row = lv_obj_create(parent);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_size(row, 212, 34);
+    lv_obj_set_style_radius(row, 8, 0);
+    lv_obj_set_style_bg_color(row, COL_CARD, 0);
+    lv_obj_set_style_bg_opa(row, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(row, COL_BORDER, 0);
+    lv_obj_set_style_border_width(row, 1, 0);
+    lv_obj_set_style_pad_hor(row, 10, 0);
+    lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_bg_color(row, lv_color_hex(0x2a2a2f), LV_STATE_PRESSED);
+    lv_obj_add_event_cb(row, cb, LV_EVENT_CLICKED, user_data);
+
+    lv_obj_t *name = lv_label_create(row);
+    lv_label_set_text(name, ref->name);
+    lv_obj_set_style_text_font(name, &gms_font_12, 0);
+    lv_obj_set_style_text_color(name, COL_TEXT, 0);
+    /* Leave room for the right-aligned stock text, which is wider in some
+     * languages ("12 op voorraad"), so a long name truncates instead of
+     * running under it. */
+    lv_obj_set_width(name, 112);
+    lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
+    lv_obj_align(name, LV_ALIGN_LEFT_MID, 0, 0);
+
+    char stock[28];
+    char amount[12];
+    fmt_amount(amount, sizeof(amount), ref->stock_amount);
+    snprintf(stock, sizeof(stock), tr("in_stock_fmt"), amount);
+    lv_obj_t *st = lv_label_create(row);
+    lv_label_set_text(st, stock);
+    lv_obj_set_style_text_font(st, &gms_font_10, 0);
+    lv_obj_set_style_text_color(st, COL_DIM2, 0);
+    lv_obj_align(st, LV_ALIGN_RIGHT_MID, 0, 0);
+    return row;
+}
+
 void ui_show_search_results(const api_search_result_t *results)
 {
     lvgl_port_lock(0);
@@ -1630,7 +1714,106 @@ void ui_show_search_results(const api_search_result_t *results)
     }
     for (int i = 0; i < results->count; i++) {
         const api_product_ref_t *ref = &results->results[i];
-        lv_obj_t *row = lv_obj_create(s_search_results_box);
+        build_product_row(s_search_results_box, ref, search_pick_cb,
+                          (void *)(uintptr_t)ref->id);
+    }
+    lvgl_port_unlock();
+}
+
+/* ------------------------------------------------------------------ */
+/* Browse (by Mealie label / A-Z index)                                */
+/* ------------------------------------------------------------------ */
+
+/* Stable storage for label ids so a row's click callback (fired later, on
+ * tap) can read back which label was tapped — emit() copies the string
+ * immediately, so these only need to stay valid while the screen is up. */
+static char s_browse_label_ids[API_MAX_LABELS][API_LABEL_ID_LEN];
+
+static void open_browse_cb(lv_event_t *e)
+{
+    (void)e;
+    emit(UI_EVT_OPEN_BROWSE, 0, 0, NULL);
+}
+
+static void browse_mode_labels_cb(lv_event_t *e)
+{
+    (void)e;
+    emit(UI_EVT_BROWSE_MODE_LABELS, 0, 0, NULL);
+}
+
+static void browse_mode_letters_cb(lv_event_t *e)
+{
+    (void)e;
+    emit(UI_EVT_BROWSE_MODE_LETTERS, 0, 0, NULL);
+}
+
+static void browse_label_pick_cb(lv_event_t *e)
+{
+    const char *label_id = (const char *)lv_event_get_user_data(e);
+    emit(UI_EVT_BROWSE_LABEL_PICK, 0, 0, label_id);
+}
+
+static void browse_letter_pick_cb(lv_event_t *e)
+{
+    char letter = (char)(uintptr_t)lv_event_get_user_data(e);
+    char text[2] = { letter, '\0' };
+    emit(UI_EVT_BROWSE_LETTER_PICK, 0, 0, text);
+}
+
+static void browse_product_pick_cb(lv_event_t *e)
+{
+    int id = (int)(uintptr_t)lv_event_get_user_data(e);
+    emit(UI_EVT_BROWSE_PICK, 0, id, NULL);
+}
+
+void ui_show_browse_index(void)
+{
+    lvgl_port_lock(0);
+    lv_obj_t *content = screen_reset(tr("browse"), COL_BLUE, true);
+    lv_obj_align(s_status_dot, LV_ALIGN_LEFT_MID, 18, 0);
+    lv_obj_align(s_status_label, LV_ALIGN_LEFT_MID, 30, 0);
+    add_bar_icon(LV_SYMBOL_LEFT, LV_ALIGN_LEFT_MID, 0, dismiss_cb);
+
+    lv_obj_t *by_label = make_button(content, tr("browse_by_label"), true,
+                                     browse_mode_labels_cb, NULL);
+    lv_obj_align(by_label, LV_ALIGN_TOP_MID, 0, 110);
+
+    lv_obj_t *by_letter = make_button(content, tr("browse_by_letter"), false,
+                                      browse_mode_letters_cb, NULL);
+    lv_obj_align(by_letter, LV_ALIGN_TOP_MID, 0, 160);
+    lvgl_port_unlock();
+}
+
+void ui_show_browse_labels(const api_label_list_t *labels)
+{
+    lvgl_port_lock(0);
+    lv_obj_t *content = screen_reset(tr("browse_by_label"), COL_BLUE, true);
+    lv_obj_set_style_pad_hor(content, 14, 0);
+    lv_obj_align(s_status_dot, LV_ALIGN_LEFT_MID, 18, 0);
+    lv_obj_align(s_status_label, LV_ALIGN_LEFT_MID, 30, 0);
+    add_bar_icon(LV_SYMBOL_LEFT, LV_ALIGN_LEFT_MID, 0, dismiss_cb);
+
+    lv_obj_t *box = lv_obj_create(content);
+    lv_obj_remove_style_all(box);
+    lv_obj_set_size(box, 212, 284);
+    lv_obj_set_pos(box, 0, 6);
+    lv_obj_set_flex_flow(box, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(box, 6, 0);
+    lv_obj_set_scroll_dir(box, LV_DIR_VER);
+
+    if (labels->count == 0) {
+        lv_obj_t *none = lv_label_create(box);
+        lv_label_set_text(none, tr("no_labels"));
+        lv_obj_set_style_text_font(none, &gms_font_12, 0);
+        lv_obj_set_style_text_color(none, COL_DIM, 0);
+    }
+
+    int n = labels->count < API_MAX_LABELS ? labels->count : API_MAX_LABELS;
+    for (int i = 0; i < n; i++) {
+        const api_label_t *l = &labels->items[i];
+        strlcpy(s_browse_label_ids[i], l->id, sizeof(s_browse_label_ids[i]));
+
+        lv_obj_t *row = lv_obj_create(box);
         lv_obj_remove_style_all(row);
         lv_obj_set_size(row, 212, 34);
         lv_obj_set_style_radius(row, 8, 0);
@@ -1641,29 +1824,140 @@ void ui_show_search_results(const api_search_result_t *results)
         lv_obj_set_style_pad_hor(row, 10, 0);
         lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_set_style_bg_color(row, lv_color_hex(0x2a2a2f), LV_STATE_PRESSED);
-        lv_obj_add_event_cb(row, search_pick_cb, LV_EVENT_CLICKED,
-                            (void *)(uintptr_t)ref->id);
+        lv_obj_add_event_cb(row, browse_label_pick_cb, LV_EVENT_CLICKED,
+                            s_browse_label_ids[i]);
 
         lv_obj_t *name = lv_label_create(row);
-        lv_label_set_text(name, ref->name);
+        lv_label_set_text(name, l->name);
         lv_obj_set_style_text_font(name, &gms_font_12, 0);
         lv_obj_set_style_text_color(name, COL_TEXT, 0);
-        /* Leave room for the right-aligned stock text, which is wider in some
-         * languages ("12 op voorraad"), so a long name truncates instead of
-         * running under it. */
-        lv_obj_set_width(name, 112);
+        /* At most two lines (they fit the 34 px row): a longer name gets a
+         * two-line height so LV_LABEL_LONG_DOT cuts it with "..." instead of
+         * overflowing the row. Shorter names keep their natural height and
+         * stay vertically centred. */
+        lv_obj_set_width(name, 150);
         lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
+        int32_t two_lines = 2 * lv_font_get_line_height(&gms_font_12);
+        lv_point_t name_size;
+        lv_text_get_size(&name_size, l->name, &gms_font_12, 0, 0, 150, LV_TEXT_FLAG_NONE);
+        if (name_size.y > two_lines) {
+            lv_obj_set_height(name, two_lines);
+        }
         lv_obj_align(name, LV_ALIGN_LEFT_MID, 0, 0);
 
-        char stock[28];
-        char amount[12];
-        fmt_amount(amount, sizeof(amount), ref->stock_amount);
-        snprintf(stock, sizeof(stock), tr("in_stock_fmt"), amount);
-        lv_obj_t *st = lv_label_create(row);
-        lv_label_set_text(st, stock);
-        lv_obj_set_style_text_font(st, &gms_font_10, 0);
-        lv_obj_set_style_text_color(st, COL_DIM2, 0);
-        lv_obj_align(st, LV_ALIGN_RIGHT_MID, 0, 0);
+        char count_text[16];
+        snprintf(count_text, sizeof(count_text), "%d", l->count);
+        lv_obj_t *count = lv_label_create(row);
+        lv_label_set_text(count, count_text);
+        lv_obj_set_style_text_font(count, &gms_font_10, 0);
+        lv_obj_set_style_text_color(count, COL_DIM2, 0);
+        lv_obj_align(count, LV_ALIGN_RIGHT_MID, 0, 0);
+    }
+    lvgl_port_unlock();
+}
+
+void ui_show_browse_letters(const api_letter_list_t *letters)
+{
+    lvgl_port_lock(0);
+    lv_obj_t *content = screen_reset(tr("browse_by_letter"), COL_BLUE, true);
+    lv_obj_align(s_status_dot, LV_ALIGN_LEFT_MID, 18, 0);
+    lv_obj_align(s_status_label, LV_ALIGN_LEFT_MID, 30, 0);
+    add_bar_icon(LV_SYMBOL_LEFT, LV_ALIGN_LEFT_MID, 0, dismiss_cb);
+
+    /* Large 44x44 letter keys, 5 per row with 2 px gaps (5 * 44 + 4 * 2 =
+     * 228 px): the 27 buckets (A-Z + '#') fill six rows that end at y = 310,
+     * so the whole index fits without scrolling and every key is an easy,
+     * finger-sized target. */
+    lv_obj_t *grid = lv_obj_create(content);
+    lv_obj_remove_style_all(grid);
+    lv_obj_set_size(grid, 228, LV_SIZE_CONTENT);
+    lv_obj_align(grid, LV_ALIGN_TOP_MID, 0, 6);
+    lv_obj_set_flex_flow(grid, LV_FLEX_FLOW_ROW_WRAP);
+    lv_obj_set_style_pad_column(grid, 2, 0);
+    lv_obj_set_style_pad_row(grid, 2, 0);
+    lv_obj_clear_flag(grid, LV_OBJ_FLAG_SCROLLABLE);
+
+    int n = letters->count < API_MAX_LETTERS ? letters->count : API_MAX_LETTERS;
+    for (int i = 0; i < n; i++) {
+        const api_letter_bucket_t *b = &letters->items[i];
+        bool enabled = b->count > 0;
+
+        lv_obj_t *cell = lv_obj_create(grid);
+        lv_obj_remove_style_all(cell);
+        lv_obj_set_size(cell, 44, 44);
+        lv_obj_set_style_radius(cell, 8, 0);
+        lv_obj_set_style_bg_color(cell, enabled ? COL_CARD : COL_DEVICE, 0);
+        lv_obj_set_style_bg_opa(cell, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_color(cell, COL_BORDER, 0);
+        lv_obj_set_style_border_width(cell, 1, 0);
+        if (enabled) {
+            lv_obj_add_flag(cell, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_set_style_bg_color(cell, lv_color_hex(0x2a2a2f), LV_STATE_PRESSED);
+            lv_obj_add_event_cb(cell, browse_letter_pick_cb, LV_EVENT_CLICKED,
+                                (void *)(uintptr_t)b->letter);
+        }
+
+        lv_obj_t *label = lv_label_create(cell);
+        char text[2] = { b->letter, '\0' };
+        lv_label_set_text(label, text);
+        lv_obj_set_style_text_font(label, &gms_font_22, 0);
+        lv_obj_set_style_text_color(label, enabled ? COL_TEXT : COL_DIM2, 0);
+        lv_obj_center(label);
+    }
+    lvgl_port_unlock();
+}
+
+void ui_show_browse_list(const char *title, const api_browse_result_t *results)
+{
+    lvgl_port_lock(0);
+    lv_obj_t *content = screen_reset(tr("browse"), COL_BLUE, true);
+    lv_obj_set_style_pad_hor(content, 14, 0);
+    lv_obj_align(s_status_dot, LV_ALIGN_LEFT_MID, 18, 0);
+    lv_obj_align(s_status_label, LV_ALIGN_LEFT_MID, 30, 0);
+    add_bar_icon(LV_SYMBOL_LEFT, LV_ALIGN_LEFT_MID, 0, dismiss_cb);
+
+    /* The picked label/letter as a title inside the content area (not the
+     * shared status-bar label, which every other screen keeps to a short
+     * fixed word). One line high, so LV_LABEL_LONG_DOT cuts a long label
+     * name with "..." instead of wrapping it under the list at y = 30. */
+    lv_obj_t *heading = lv_label_create(content);
+    lv_label_set_text(heading, title);
+    lv_obj_set_style_text_font(heading, &gms_font_14, 0);
+    lv_obj_set_style_text_color(heading, COL_TEXT, 0);
+    lv_obj_set_width(heading, 212);
+    lv_obj_set_height(heading, lv_font_get_line_height(&gms_font_14));
+    lv_label_set_long_mode(heading, LV_LABEL_LONG_DOT);
+    lv_obj_set_pos(heading, 0, 4);
+
+    lv_obj_t *box = lv_obj_create(content);
+    lv_obj_remove_style_all(box);
+    lv_obj_set_size(box, 212, 254);
+    lv_obj_set_pos(box, 0, 30);
+    lv_obj_set_flex_flow(box, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(box, 6, 0);
+    lv_obj_set_scroll_dir(box, LV_DIR_VER);
+
+    if (results->count == 0) {
+        lv_obj_t *none = lv_label_create(box);
+        lv_label_set_text(none, tr("no_matches"));
+        lv_obj_set_style_text_font(none, &gms_font_12, 0);
+        lv_obj_set_style_text_color(none, COL_DIM, 0);
+    }
+
+    for (int i = 0; i < results->count; i++) {
+        const api_product_ref_t *ref = &results->results[i];
+        build_product_row(box, ref, browse_product_pick_cb, (void *)(uintptr_t)ref->id);
+    }
+
+    /* v1 shows only the first page (see api_browse_result_t.total); a
+     * truncated bucket gets a non-clickable hint instead of silent loss. */
+    if (results->total > results->count) {
+        lv_obj_t *more = lv_label_create(box);
+        char text[40];
+        snprintf(text, sizeof(text), tr("more_items_fmt"), results->total - results->count);
+        lv_label_set_text(more, text);
+        lv_obj_set_style_text_font(more, &gms_font_10, 0);
+        lv_obj_set_style_text_color(more, COL_DIM2, 0);
     }
     lvgl_port_unlock();
 }

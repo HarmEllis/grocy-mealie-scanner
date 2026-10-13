@@ -15,12 +15,13 @@ extern const uint8_t s_montserrat_ttf_end[]
 lv_font_t gms_font_10;
 lv_font_t gms_font_12;
 lv_font_t gms_font_14;
+lv_font_t gms_font_16;
 lv_font_t gms_font_18;
 lv_font_t gms_font_20;
 lv_font_t gms_font_22;
 lv_font_t gms_font_24;
 
-static lv_font_t *s_fallbacks[7];
+static lv_font_t *s_fallbacks[8];
 
 static bool has_glyph(const lv_font_t *font, uint32_t codepoint)
 {
@@ -54,6 +55,7 @@ esp_err_t ui_fonts_init(void)
         { &gms_font_10, &lv_font_montserrat_10, 10 },
         { &gms_font_12, &lv_font_montserrat_12, 12 },
         { &gms_font_14, &lv_font_montserrat_14, 14 },
+        { &gms_font_16, &lv_font_montserrat_16, 16 },
         { &gms_font_18, &lv_font_montserrat_18, 18 },
         { &gms_font_20, &lv_font_montserrat_20, 20 },
         { &gms_font_22, &lv_font_montserrat_22, 22 },

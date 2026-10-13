@@ -12,6 +12,18 @@
 #define API_ERR_LEN      96
 #define API_MAX_MATCHES  5
 #define API_MAX_RESULTS  8
+/* Fits a 36-char Mealie label UUID + NUL, and the reserved "unlabeled"
+ * sentinel. */
+#define API_LABEL_ID_LEN       40
+/* 19 real labels (server-side cap, see docs/DEVICE-API.md) + the always-
+ * appended "unlabeled" bucket. */
+#define API_MAX_LABELS         20
+/* A-Z + the '#' bucket for names that don't start with a letter. */
+#define API_MAX_LETTERS        27
+/* First-page cap for a browse product list; matches the server's browse
+ * limit default/max (see docs/DEVICE-API.md). v1 firmware shows only the
+ * first page (see api_browse_result_t.total/has_more). */
+#define API_MAX_BROWSE_RESULTS 20
 
 typedef struct {
     int  id;
@@ -66,6 +78,38 @@ typedef struct {
     api_product_ref_t results[API_MAX_RESULTS];
 } api_search_result_t;
 
+/* Browse (by Mealie label / A-Z index). See docs/DEVICE-API.md
+ * for the /labels, /letters, and /products?labelId=/letter= contract. */
+
+typedef struct {
+    char id[API_LABEL_ID_LEN];   /* real Mealie label id, or the reserved
+                                  * "unlabeled" sentinel */
+    char name[API_NAME_LEN];
+    int  count;
+} api_label_t;
+
+typedef struct {
+    int count;
+    api_label_t items[API_MAX_LABELS];
+} api_label_list_t;
+
+typedef struct {
+    char letter; /* 'A'-'Z' or '#' */
+    int  count;
+} api_letter_bucket_t;
+
+typedef struct {
+    int count; /* always API_MAX_LETTERS (27) on success */
+    api_letter_bucket_t items[API_MAX_LETTERS];
+} api_letter_list_t;
+
+typedef struct {
+    int  count;                 /* items actually filled in `results` */
+    int  total;                 /* total matches server-side, for the "+N more" hint */
+    bool has_more;
+    api_product_ref_t results[API_MAX_BROWSE_RESULTS];
+} api_browse_result_t;
+
 /* Stores base URL + token; no I/O. */
 void api_client_init(const app_config_t *cfg);
 
@@ -82,6 +126,11 @@ bool api_error_is_transport(esp_err_t err);
 esp_err_t api_action(int product_id, api_action_t action, int amount,
                      api_action_result_t *out, char *errbuf);
 esp_err_t api_search(const char *query, api_search_result_t *out, char *errbuf);
+/* Browse: full first page only (no offset), see api_browse_result_t. */
+esp_err_t api_list_labels(api_label_list_t *out, char *errbuf);
+esp_err_t api_list_letters(api_letter_list_t *out, char *errbuf);
+esp_err_t api_list_products_by_label(const char *label_id, api_browse_result_t *out, char *errbuf);
+esp_err_t api_list_products_by_letter(char letter, api_browse_result_t *out, char *errbuf);
 esp_err_t api_create_product(const char *name, const char *barcode,
                              api_product_t *out, char *errbuf);
 esp_err_t api_link_barcode(int product_id, const char *barcode,

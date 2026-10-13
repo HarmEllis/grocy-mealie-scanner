@@ -14,6 +14,7 @@
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 
 /* --- Demo barcodes, mapped to scenarios in api_scan() ------------------- */
 #define BC_MILK  "8710398526045"  /* -> found, product 101            */
@@ -23,6 +24,25 @@
 #define BC_ERR   "9999999999999"  /* -> simulated transport error     */
 
 #define DEMO_GENERIC_ID 199 /* reused slot for any unrecognised barcode */
+
+/* Browse label metadata, kept as a parallel array indexed in lockstep
+ * with s_products[] rather than a field on api_product_t: that struct is the
+ * full-product wire shape used elsewhere, and browse-only metadata does not
+ * belong on it. An empty/NULL id means unlabeled (the "unlabeled" bucket) — including every
+ * index beyond the explicit entries below (create appends there, so demo-
+ * created products default to unlabeled, matching the server's rule). */
+typedef struct {
+    const char *id;
+    const char *name;
+} demo_label_t;
+
+static const demo_label_t s_demo_labels[16] = {
+    { "L-zuivel", "Zuivel" },   /* 101 Semi-skimmed milk */
+    { "L-pasta", "Pasta" },     /* 103 Spaghetti 500g */
+    { NULL, NULL },             /* 110 Cola Zero 1.5L -> unlabeled */
+    { "L-dranken", "Dranken" }, /* 111 Lemonade 1L */
+    { NULL, NULL },             /* DEMO_GENERIC_ID scratch slot (excluded from browse) */
+};
 
 /* Mutable product table. The first entries are fixtures; create/link append
  * past s_count up to the array capacity. Stock numbers are doubles to match
@@ -92,7 +112,7 @@ esp_err_t api_ping(char *errbuf)
 
 int api_server_api_version(void)
 {
-    return 3; /* demo server supports the full contract incl. shoppingListAmount */
+    return 4; /* demo server supports the full contract incl. browse */
 }
 
 int api_last_http_status(void)
@@ -279,6 +299,143 @@ esp_err_t api_get_product(int product_id, api_product_t *out, char *errbuf)
         return ESP_FAIL;
     }
     *out = *p;
+    return ESP_OK;
+}
+
+static bool product_has_label(int index)
+{
+    return index >= 0 && index < (int)(sizeof(s_demo_labels) / sizeof(s_demo_labels[0])) &&
+           s_demo_labels[index].id != NULL && s_demo_labels[index].id[0] != '\0';
+}
+
+/* Simplified stand-in for the server's normalize-then-bucket rule (ASCII
+ * fixture names only, so no diacritic handling is needed here). */
+static char demo_letter_bucket(const char *name)
+{
+    unsigned char c = (unsigned char)name[0];
+    return isalpha(c) ? (char)toupper(c) : '#';
+}
+
+esp_err_t api_list_labels(api_label_list_t *out, char *errbuf)
+{
+    (void)errbuf;
+    memset(out, 0, sizeof(*out));
+
+    int unlabeled_count = 0;
+    for (int i = 0; i < s_count; i++) {
+        if (s_products[i].id == DEMO_GENERIC_ID) {
+            continue;
+        }
+        if (!product_has_label(i)) {
+            unlabeled_count++;
+            continue;
+        }
+        const char *id = s_demo_labels[i].id;
+        api_label_t *existing = NULL;
+        for (int b = 0; b < out->count; b++) {
+            if (strcmp(out->items[b].id, id) == 0) {
+                existing = &out->items[b];
+                break;
+            }
+        }
+        if (existing != NULL) {
+            existing->count++;
+        } else if (out->count < API_MAX_LABELS) {
+            api_label_t *l = &out->items[out->count++];
+            strlcpy(l->id, id, sizeof(l->id));
+            strlcpy(l->name, s_demo_labels[i].name, sizeof(l->name));
+            l->count = 1;
+        }
+    }
+    /* Server order: label name ascending (docs/DEVICE-API.md), then the
+     * unlabeled bucket last. Insertion sort; the demo has a handful. */
+    for (int a = 1; a < out->count; a++) {
+        api_label_t key = out->items[a];
+        int b = a - 1;
+        while (b >= 0 && strcasecmp(out->items[b].name, key.name) > 0) {
+            out->items[b + 1] = out->items[b];
+            b--;
+        }
+        out->items[b + 1] = key;
+    }
+    if (unlabeled_count > 0 && out->count < API_MAX_LABELS) {
+        api_label_t *l = &out->items[out->count++];
+        strlcpy(l->id, "unlabeled", sizeof(l->id));
+        strlcpy(l->name, "Overig", sizeof(l->name));
+        l->count = unlabeled_count;
+    }
+    return ESP_OK;
+}
+
+esp_err_t api_list_letters(api_letter_list_t *out, char *errbuf)
+{
+    (void)errbuf;
+    memset(out, 0, sizeof(*out));
+    static const char letters[API_MAX_LETTERS] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ#";
+    for (int i = 0; i < API_MAX_LETTERS; i++) {
+        out->items[i].letter = letters[i];
+        out->items[i].count = 0;
+    }
+    out->count = API_MAX_LETTERS;
+
+    for (int i = 0; i < s_count; i++) {
+        if (s_products[i].id == DEMO_GENERIC_ID) {
+            continue;
+        }
+        char bucket = demo_letter_bucket(s_products[i].name);
+        for (int j = 0; j < out->count; j++) {
+            if (out->items[j].letter == bucket) {
+                out->items[j].count++;
+                break;
+            }
+        }
+    }
+    return ESP_OK;
+}
+
+esp_err_t api_list_products_by_label(const char *label_id, api_browse_result_t *out, char *errbuf)
+{
+    (void)errbuf;
+    memset(out, 0, sizeof(*out));
+    bool want_unlabeled = strcmp(label_id, "unlabeled") == 0;
+    for (int i = 0; i < s_count && out->count < API_MAX_BROWSE_RESULTS; i++) {
+        if (s_products[i].id == DEMO_GENERIC_ID) {
+            continue;
+        }
+        bool has_label = product_has_label(i);
+        bool matches = want_unlabeled ? !has_label
+                                      : (has_label && strcmp(s_demo_labels[i].id, label_id) == 0);
+        if (!matches) {
+            continue;
+        }
+        api_product_ref_t *ref = &out->results[out->count++];
+        ref->id = s_products[i].id;
+        strlcpy(ref->name, s_products[i].name, sizeof(ref->name));
+        ref->stock_amount = s_products[i].stock_amount;
+    }
+    out->total = out->count;
+    out->has_more = false;
+    return ESP_OK;
+}
+
+esp_err_t api_list_products_by_letter(char letter, api_browse_result_t *out, char *errbuf)
+{
+    (void)errbuf;
+    memset(out, 0, sizeof(*out));
+    for (int i = 0; i < s_count && out->count < API_MAX_BROWSE_RESULTS; i++) {
+        if (s_products[i].id == DEMO_GENERIC_ID) {
+            continue;
+        }
+        if (demo_letter_bucket(s_products[i].name) != letter) {
+            continue;
+        }
+        api_product_ref_t *ref = &out->results[out->count++];
+        ref->id = s_products[i].id;
+        strlcpy(ref->name, s_products[i].name, sizeof(ref->name));
+        ref->stock_amount = s_products[i].stock_amount;
+    }
+    out->total = out->count;
+    out->has_more = false;
     return ESP_OK;
 }
 

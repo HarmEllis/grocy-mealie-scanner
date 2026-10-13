@@ -402,6 +402,116 @@ esp_err_t api_search(const char *query, api_search_result_t *out, char *errbuf)
     return ESP_OK;
 }
 
+esp_err_t api_list_labels(api_label_list_t *out, char *errbuf)
+{
+    int status = 0;
+    cJSON *json = NULL;
+    ESP_RETURN_ON_ERROR(request_json("GET", "/api/device/v1/labels", NULL, &status, &json, errbuf),
+                        TAG, "labels");
+    if (status != 200) {
+        take_server_error(json, errbuf, tr("browse_failed"));
+        cJSON_Delete(json);
+        return ESP_FAIL;
+    }
+
+    memset(out, 0, sizeof(*out));
+    const cJSON *labels = cJSON_GetObjectItemCaseSensitive(json, "labels");
+    const cJSON *l;
+    cJSON_ArrayForEach(l, labels) {
+        if (out->count >= API_MAX_LABELS) {
+            break;
+        }
+        api_label_t *label = &out->items[out->count++];
+        json_get_str(l, "id", label->id, sizeof(label->id));
+        json_get_str(l, "name", label->name, sizeof(label->name));
+        label->count = (int)json_get_num(l, "count", 0);
+    }
+    cJSON_Delete(json);
+    return ESP_OK;
+}
+
+esp_err_t api_list_letters(api_letter_list_t *out, char *errbuf)
+{
+    int status = 0;
+    cJSON *json = NULL;
+    ESP_RETURN_ON_ERROR(request_json("GET", "/api/device/v1/letters", NULL, &status, &json, errbuf),
+                        TAG, "letters");
+    if (status != 200) {
+        take_server_error(json, errbuf, tr("browse_failed"));
+        cJSON_Delete(json);
+        return ESP_FAIL;
+    }
+
+    memset(out, 0, sizeof(*out));
+    const cJSON *letters = cJSON_GetObjectItemCaseSensitive(json, "letters");
+    const cJSON *entry;
+    cJSON_ArrayForEach(entry, letters) {
+        if (out->count >= API_MAX_LETTERS) {
+            break;
+        }
+        char letter_str[4] = "";
+        json_get_str(entry, "letter", letter_str, sizeof(letter_str));
+        api_letter_bucket_t *bucket = &out->items[out->count++];
+        bucket->letter = letter_str[0] != '\0' ? letter_str[0] : '?';
+        bucket->count = (int)json_get_num(entry, "count", 0);
+    }
+    cJSON_Delete(json);
+    return ESP_OK;
+}
+
+/* Shared by api_list_products_by_label/_letter: both answer with the same
+ * {"results","total","offset","hasMore"} shape as api_search's endpoint. */
+static esp_err_t list_products_browse(const char *path, api_browse_result_t *out, char *errbuf)
+{
+    int status = 0;
+    cJSON *json = NULL;
+    ESP_RETURN_ON_ERROR(request_json("GET", path, NULL, &status, &json, errbuf),
+                        TAG, "browse");
+    if (status != 200) {
+        take_server_error(json, errbuf, tr("browse_failed"));
+        cJSON_Delete(json);
+        return ESP_FAIL;
+    }
+
+    memset(out, 0, sizeof(*out));
+    out->total = (int)json_get_num(json, "total", 0);
+    out->has_more = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(json, "hasMore"));
+    const cJSON *results = cJSON_GetObjectItemCaseSensitive(json, "results");
+    const cJSON *r;
+    cJSON_ArrayForEach(r, results) {
+        if (out->count >= API_MAX_BROWSE_RESULTS) {
+            break;
+        }
+        api_product_ref_t *ref = &out->results[out->count++];
+        ref->id = (int)json_get_num(r, "id", 0);
+        json_get_str(r, "name", ref->name, sizeof(ref->name));
+        ref->stock_amount = json_get_num(r, "stockAmount", 0);
+    }
+    cJSON_Delete(json);
+    return ESP_OK;
+}
+
+esp_err_t api_list_products_by_label(const char *label_id, api_browse_result_t *out, char *errbuf)
+{
+    char encoded[3 * API_LABEL_ID_LEN];
+    url_encode(label_id, encoded, sizeof(encoded));
+    char path[256];
+    snprintf(path, sizeof(path), "/api/device/v1/products?labelId=%s&limit=%d",
+             encoded, API_MAX_BROWSE_RESULTS);
+    return list_products_browse(path, out, errbuf);
+}
+
+esp_err_t api_list_products_by_letter(char letter, api_browse_result_t *out, char *errbuf)
+{
+    char letter_str[2] = { letter, '\0' };
+    char encoded[8];
+    url_encode(letter_str, encoded, sizeof(encoded));
+    char path[128];
+    snprintf(path, sizeof(path), "/api/device/v1/products?letter=%s&limit=%d",
+             encoded, API_MAX_BROWSE_RESULTS);
+    return list_products_browse(path, out, errbuf);
+}
+
 /* POST helper shared by create + link: both answer with a full product.
  * Unlike GET /scan (which wraps the product as {"status","product"}), the
  * create and link endpoints return the product object at the response root
