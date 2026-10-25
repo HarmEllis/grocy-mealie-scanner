@@ -518,11 +518,31 @@ static void handle_create(const char *name)
     show_product(&product);
 }
 
+/* Unknown-barcode link flow: a Mealie-only food was picked. The server creates
+ * its Grocy product, maps it and links the scanned barcode. */
+static void handle_link_mealie(const char *mealie_food_id)
+{
+    if (mealie_food_id[0] == '\0') {
+        return;
+    }
+    ui_show_saving();
+
+    char err[API_ERR_LEN];
+    api_product_t product;
+    esp_err_t ret = api_create_product_from_mealie(mealie_food_id, s_scan.barcode, &product, err);
+    if (ret != ESP_OK) {
+        show_error(err); /* incl. 409 already mapped / barcode taken */
+        return;
+    }
+    show_product(&product);
+}
+
 static void handle_search_query(const char *query)
 {
     char err[API_ERR_LEN];
     api_search_result_t results;
-    esp_err_t ret = api_search(query, &results, err);
+    /* Mealie-only foods only make sense when there is a barcode to link. */
+    esp_err_t ret = api_search(query, !s_search_from_idle, &results, err);
     if (ret != ESP_OK) {
         show_error(err);
         return;
@@ -694,6 +714,11 @@ static void handle_ui(const ui_event_t *evt)
             handle_pick_product(evt->product_id);
         } else {
             handle_link(evt->product_id);
+        }
+        break;
+    case UI_EVT_SEARCH_PICK_MEALIE:
+        if (s_state == APP_SEARCH && !s_search_from_idle) {
+            handle_link_mealie(evt->text);
         }
         break;
     case UI_EVT_OPEN_BROWSE:

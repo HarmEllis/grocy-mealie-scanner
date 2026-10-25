@@ -15,6 +15,7 @@ typedef enum {
     UI_EVT_OPEN_SEARCH,
     UI_EVT_SEARCH_QUERY,     /* arg.text */
     UI_EVT_SEARCH_PICK,      /* arg.product_id */
+    UI_EVT_SEARCH_PICK_MEALIE, /* arg.text: Mealie food id (Mealie-only result) */
     UI_EVT_OPEN_BROWSE,          /* "Browse" button tapped on the idle screen */
     UI_EVT_BROWSE_MODE_LABELS,   /* "By label" tapped on the browse-index screen */
     UI_EVT_BROWSE_MODE_LETTERS,  /* "A-Z" tapped on the browse-index screen */

@@ -368,13 +368,15 @@ static int url_encode(const char *src, char *dst, size_t cap)
     return (int)o;
 }
 
-esp_err_t api_search(const char *query, api_search_result_t *out, char *errbuf)
+esp_err_t api_search(const char *query, bool include_mealie,
+                     api_search_result_t *out, char *errbuf)
 {
     char encoded[3 * API_NAME_LEN];
     url_encode(query, encoded, sizeof(encoded));
     char path[256];
-    snprintf(path, sizeof(path), "/api/device/v1/products?query=%s&limit=%d",
-             encoded, API_MAX_RESULTS);
+    snprintf(path, sizeof(path), "/api/device/v1/products?query=%s&limit=%d%s",
+             encoded, API_MAX_RESULTS,
+             include_mealie && s_server_api_version >= 5 ? "&include=mealie" : "");
 
     int status = 0;
     cJSON *json = NULL;
@@ -397,6 +399,7 @@ esp_err_t api_search(const char *query, api_search_result_t *out, char *errbuf)
         ref->id = (int)json_get_num(r, "id", 0);
         json_get_str(r, "name", ref->name, sizeof(ref->name));
         ref->stock_amount = json_get_num(r, "stockAmount", 0);
+        json_get_str(r, "mealieFoodId", ref->mealie_food_id, sizeof(ref->mealie_food_id));
     }
     cJSON_Delete(json);
     return ESP_OK;
@@ -538,6 +541,24 @@ esp_err_t api_create_product(const char *name, const char *barcode,
 {
     cJSON *body = cJSON_CreateObject();
     cJSON_AddStringToObject(body, "name", name);
+    cJSON_AddStringToObject(body, "barcode", barcode);
+    char *body_str = cJSON_PrintUnformatted(body);
+    cJSON_Delete(body);
+    if (body_str == NULL) {
+        set_err(errbuf, tr("out_of_memory"));
+        return ESP_ERR_NO_MEM;
+    }
+    esp_err_t err = post_for_product("/api/device/v1/products", body_str, out, errbuf,
+                                     tr("create_failed"));
+    free(body_str);
+    return err;
+}
+
+esp_err_t api_create_product_from_mealie(const char *mealie_food_id, const char *barcode,
+                                         api_product_t *out, char *errbuf)
+{
+    cJSON *body = cJSON_CreateObject();
+    cJSON_AddStringToObject(body, "mealieFoodId", mealie_food_id);
     cJSON_AddStringToObject(body, "barcode", barcode);
     char *body_str = cJSON_PrintUnformatted(body);
     cJSON_Delete(body);

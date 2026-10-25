@@ -242,9 +242,11 @@ esp_err_t api_action(int product_id, api_action_t action, int amount,
     return ESP_OK;
 }
 
-esp_err_t api_search(const char *query, api_search_result_t *out, char *errbuf)
+esp_err_t api_search(const char *query, bool include_mealie,
+                     api_search_result_t *out, char *errbuf)
 {
     (void)errbuf;
+    (void)include_mealie; /* the demo catalogue has no Mealie-only foods */
     memset(out, 0, sizeof(*out));
     for (int i = 0; i < s_count && out->count < API_MAX_RESULTS; i++) {
         if (s_products[i].id == DEMO_GENERIC_ID) {
@@ -276,6 +278,16 @@ esp_err_t api_create_product(const char *name, const char *barcode,
     strlcpy(p->quantity_unit, "pcs", sizeof(p->quantity_unit));
     *out = *p;
     return ESP_OK;
+}
+
+esp_err_t api_create_product_from_mealie(const char *mealie_food_id, const char *barcode,
+                                         api_product_t *out, char *errbuf)
+{
+    (void)mealie_food_id;
+    (void)barcode;
+    (void)out;
+    set_err(errbuf, tr("demo_unknown_product"));
+    return ESP_FAIL;
 }
 
 esp_err_t api_link_barcode(int product_id, const char *barcode,

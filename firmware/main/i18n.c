@@ -47,6 +47,7 @@
     X("search_go", "Search", "Zoek") \
     X("product_name_placeholder", "Product name...", "Productnaam...") \
     X("no_matches", "No matches", "Geen resultaten") \
+    X("mealie_only", "Mealie only", "Alleen Mealie") \
     X("browse", "Browse", "Bladeren") \
     X("browse_by_label", "By label", "Op label") \
     X("browse_by_letter", "A-Z", "A-Z") \
