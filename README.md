@@ -210,6 +210,28 @@ CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) builds the
 esp32s3 firmware on every push and enforces the OTA partition guards, so a
 green check means the release is buildable.
 
+### Firmware updates and pre-releases
+
+The scanner checks GitHub Releases for a newer firmware and offers it on screen.
+By default it only follows the latest **stable** release.
+
+When the connected grocy-mealie-sync runs a **pre-release** (its `/ping`
+version has a suffix such as `1.19.0-rc.19`), the scanner also considers
+pre-releases and offers the highest version by semver precedence
+(`0.7.0-rc.2` is newer than `0.7.0-rc.1` and older than `0.7.0`). When the server
+is back on a stable version, only stable releases are offered again, so a
+scanner on a pre-release moves to the next stable release.
+
+To publish a firmware pre-release, push a tag with a suffix (`v0.7.0-rc.1`).
+The Pages workflow builds and signs it, attaches the binaries to a GitHub
+release marked as pre-release, and does **not** deploy the hosted web flasher,
+which always serves the latest stable firmware.
+
+The tag must be at most 31 characters (the firmware embeds it as its version)
+and must not end in `-dirty` or `-<n>-g<sha>`, which the firmware treats as
+`git describe` build decoration. The pre-release check reads `/releases/latest`
+plus the 15 newest releases.
+
 ### Documentation
 
 - Device API contract: [`docs/DEVICE-API.md`](docs/DEVICE-API.md)

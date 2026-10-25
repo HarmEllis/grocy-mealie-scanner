@@ -145,6 +145,11 @@ esp_err_t api_get_product(int product_id, api_product_t *out, char *errbuf);
  * never shows a feature that would 404. */
 int api_server_api_version(void);
 
+/* True when the last /ping succeeded and reported a pre-release gm-sync version
+ * (a semver with a "-" suffix such as "1.19.0-rc.19"). Used to let OTA follow
+ * a pre-release server onto pre-release firmware. */
+bool api_server_is_prerelease(void);
+
 #if CONFIG_GMS_DEMO_MODE
 /* Demo build only (api_client_demo.c): returns the next synthetic barcode in
  * a fixed scenario cycle (product -> rich not-found -> product -> bare

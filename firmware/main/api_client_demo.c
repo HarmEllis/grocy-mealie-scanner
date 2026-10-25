@@ -110,6 +110,11 @@ esp_err_t api_ping(char *errbuf)
     return ESP_OK;
 }
 
+bool api_server_is_prerelease(void)
+{
+    return false;
+}
+
 int api_server_api_version(void)
 {
     return 4; /* demo server supports the full contract incl. browse */

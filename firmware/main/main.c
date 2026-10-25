@@ -323,6 +323,18 @@ static void ota_progress_cb(int percent)
     ui_show_ota_progress(percent);
 }
 
+/* The OTA channel follows the connected gm-sync: pre-release firmware is only
+ * offered while the server runs a pre-release. The server version is re-read
+ * on every check, so an upgrade or downgrade of the server takes effect
+ * without rebooting the scanner. If the ping fails the channel is unknown, so
+ * only stable releases are considered (a running pre-release is never
+ * downgraded, since stable sorts below it). */
+static bool ota_include_prereleases(void)
+{
+    char err[API_ERR_LEN];
+    return api_ping(err) == ESP_OK && api_server_is_prerelease();
+}
+
 /* Query GitHub for a newer release.  Only surfaces the prompt when idle and
  * online; any error (network, clock-not-synced, parse) is silent and retried
  * on the next periodic tick. */
@@ -331,7 +343,7 @@ static void handle_ota_check(void)
     if (s_state != APP_IDLE || !wifi_conn_is_connected()) {
         return;
     }
-    if (ota_check_for_update(&s_ota_result) != ESP_OK || !s_ota_result.available) {
+    if (ota_check_for_update(ota_include_prereleases(), &s_ota_result) != ESP_OK || !s_ota_result.available) {
         return;
     }
     ESP_LOGI(TAG, "OTA available: %s -> %s", s_ota_result.current_version,
@@ -370,7 +382,7 @@ static void handle_ota_check_manual(void)
         return;
     }
     ui_show_connecting(tr("ota_checking")); /* check blocks the app task ~seconds */
-    if (ota_check_for_update(&s_ota_result) != ESP_OK) {
+    if (ota_check_for_update(ota_include_prereleases(), &s_ota_result) != ESP_OK) {
         show_error(tr("ota_check_failed"));
         return;
     }

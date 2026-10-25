@@ -6,14 +6,17 @@
  * 2. GitHub API: User-Agent header avoids 403; Accept header requests JSON.
  * 3. Progress: uses Advanced OTA API (begin/perform loop/finish) so the UI
  *    can show a live progress bar via the callback.
- * 4. Memory: 16 KB response buffer for the /releases/latest payload; fine
- *    given 8 MB PSRAM on the ESP32-S3R8. */
+ * 4. Memory: 16 KB response buffer for the /releases/latest payload (64 KB
+ *    for the pre-release list, from PSRAM); fine given 8 MB PSRAM on the
+ *    ESP32-S3R8. */
 
 #include "ota_update.h"
 
 #include "cJSON.h"
+#include "semver.h"
 #include "esp_app_desc.h"
 #include "esp_http_client.h"
+#include "esp_heap_caps.h"
 #include "esp_https_ota.h"
 #include "esp_log.h"
 
@@ -23,9 +26,18 @@
 
 static const char *TAG = "ota";
 
-/* GitHub API endpoint for the latest release. */
+/* GitHub API endpoint for the latest stable release. GitHub leaves
+ * pre-releases out of /releases/latest. */
 #define GITHUB_API_URL \
     "https://api.github.com/repos/HarmEllis/grocy-mealie-scanner/releases/latest"
+
+/* Most recent releases including pre-releases (newest first). Only used when
+ * the connected gm-sync runs a pre-release, see ota_check_for_update. */
+#define GITHUB_API_LIST_URL_FMT \
+    "https://api.github.com/repos/HarmEllis/grocy-mealie-scanner/releases?per_page=5&page=%d"
+/* Pages of the release list to read. Together with /releases/latest (always a
+ * candidate) this covers the 15 newest releases. */
+#define RELEASE_LIST_MAX_PAGES 3
 
 /* Download URL template.  %s is the full tag, e.g. "v0.0.2". */
 #define GITHUB_DL_FMT \
@@ -35,39 +47,9 @@ static const char *TAG = "ota";
 #define API_TIMEOUT_MS   10000
 #define DL_TIMEOUT_MS    30000
 #define RESPONSE_BUF_MAX 16384   /* GitHub /releases/latest can be 5–20 KB */
+#define RESPONSE_LIST_BUF_MAX 65536 /* five releases with their assets */
 #define USER_AGENT       "grocy-mealie-scanner"
 #define MAX_REDIRECTS    5
-
-/* ------------------------------------------------------------------ */
-/* Semver helpers                                                      */
-/* ------------------------------------------------------------------ */
-
-typedef struct { int major, minor, patch; } semver_t;
-
-/* Parse "v1.2.3" or "1.2.3" (ignoring any -suffix like -rc1 or -5-gabcdef)
- * into a semver_t.  Returns true on success. */
-static bool parse_semver(const char *s, semver_t *out)
-{
-    if (s == NULL) {
-        return false;
-    }
-    if (*s == 'v' || *s == 'V') {
-        s++;
-    }
-    return sscanf(s, "%d.%d.%d", &out->major, &out->minor, &out->patch) == 3;
-}
-
-/* Returns >0 if a > b, <0 if a < b, 0 if equal. */
-static int semver_cmp(const semver_t *a, const semver_t *b)
-{
-    if (a->major != b->major) {
-        return a->major - b->major;
-    }
-    if (a->minor != b->minor) {
-        return a->minor - b->minor;
-    }
-    return a->patch - b->patch;
-}
 
 /* ------------------------------------------------------------------ */
 /* Clock guard (review point 1)                                        */
@@ -124,7 +106,70 @@ extern esp_err_t esp_crt_bundle_attach(void *conf);
 /* Public: check for update                                            */
 /* ------------------------------------------------------------------ */
 
-esp_err_t ota_check_for_update(ota_check_result_t *result)
+static void best_tag_consider_release(semver_best_t *best, const cJSON *release)
+{
+    if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(release, "draft"))) {
+        return;
+    }
+    const cJSON *tag = cJSON_GetObjectItemCaseSensitive(release, "tag_name");
+    if (cJSON_IsString(tag)) {
+        semver_best_consider(best, tag->valuestring);
+    }
+}
+
+/* GETs a GitHub API URL and parses the JSON body. Returns NULL on any failure. */
+static cJSON *github_get_json(const char *url, int buf_max)
+{
+    /* Prefer PSRAM for the large release list; fall back to the heap. */
+    char *resp = heap_caps_calloc(1, buf_max, MALLOC_CAP_SPIRAM);
+    if (resp == NULL) {
+        resp = calloc(1, buf_max);
+    }
+    if (resp == NULL) {
+        return NULL;
+    }
+    resp_acc_t acc = { .buf = resp, .len = 0, .cap = buf_max };
+
+    esp_http_client_config_t cfg = {
+        .url               = url,
+        .timeout_ms        = API_TIMEOUT_MS,
+        .event_handler     = http_event_handler,
+        .user_data         = &acc,
+        .crt_bundle_attach = CRT_BUNDLE_ATTACH,
+    };
+
+    esp_http_client_handle_t client = esp_http_client_init(&cfg);
+    if (client == NULL) {
+        free(resp);
+        return NULL;
+    }
+
+    /* Review point 2: GitHub API requires User-Agent; without it → 403.
+     * Also specify the modern JSON Accept header. */
+    esp_http_client_set_header(client, "User-Agent", USER_AGENT);
+    esp_http_client_set_header(client, "Accept", "application/vnd.github+json");
+
+    esp_err_t err = esp_http_client_perform(client);
+    int status = esp_http_client_get_status_code(client);
+    esp_http_client_cleanup(client);
+
+    cJSON *json = NULL;
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "GitHub API request failed: %s", esp_err_to_name(err));
+    } else if (status != 200) {
+        ESP_LOGW(TAG, "GitHub API HTTP %d", status);
+    } else {
+        resp[acc.len] = '\0';
+        json = cJSON_Parse(resp);
+        if (json == NULL) {
+            ESP_LOGW(TAG, "failed to parse GitHub API response");
+        }
+    }
+    free(resp);
+    return json;
+}
+
+esp_err_t ota_check_for_update(bool include_prereleases, ota_check_result_t *result)
 {
     memset(result, 0, sizeof(*result));
 
@@ -140,87 +185,61 @@ esp_err_t ota_check_for_update(ota_check_result_t *result)
         return ESP_ERR_INVALID_STATE;
     }
 
-    /* Allocate response buffer. */
-    char *resp = calloc(1, RESPONSE_BUF_MAX);
-    if (resp == NULL) {
-        return ESP_ERR_NO_MEM;
-    }
-    resp_acc_t acc = { .buf = resp, .len = 0, .cap = RESPONSE_BUF_MAX };
+    semver_best_t best = { .have = false };
 
-    esp_http_client_config_t cfg = {
-        .url               = GITHUB_API_URL,
-        .timeout_ms        = API_TIMEOUT_MS,
-        .event_handler     = http_event_handler,
-        .user_data         = &acc,
-        .crt_bundle_attach = CRT_BUNDLE_ATTACH,
-    };
-
-    esp_http_client_handle_t client = esp_http_client_init(&cfg);
-    if (client == NULL) {
-        free(resp);
+    /* The latest stable release is always a candidate, so a pre-release
+     * check can never miss a newer stable one. */
+    cJSON *latest = github_get_json(GITHUB_API_URL, RESPONSE_BUF_MAX);
+    if (latest == NULL) {
         return ESP_FAIL;
     }
+    best_tag_consider_release(&best, latest);
+    cJSON_Delete(latest);
 
-    /* Review point 2: GitHub API requires User-Agent; without it → 403.
-     * Also specify the modern JSON Accept header. */
-    esp_http_client_set_header(client, "User-Agent", USER_AGENT);
-    esp_http_client_set_header(client, "Accept", "application/vnd.github+json");
-
-    esp_err_t err = esp_http_client_perform(client);
-    int status = esp_http_client_get_status_code(client);
-    esp_http_client_cleanup(client);
-
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "GitHub API request failed: %s", esp_err_to_name(err));
-        free(resp);
-        return err;
+    if (include_prereleases) {
+        for (int page = 1; page <= RELEASE_LIST_MAX_PAGES; page++) {
+            char url[160];
+            snprintf(url, sizeof(url), GITHUB_API_LIST_URL_FMT, page);
+            cJSON *list = github_get_json(url, RESPONSE_LIST_BUF_MAX);
+            if (list == NULL) {
+                return ESP_FAIL;
+            }
+            const cJSON *release;
+            bool any = false;
+            cJSON_ArrayForEach(release, list) {
+                any = true;
+                best_tag_consider_release(&best, release);
+            }
+            cJSON_Delete(list);
+            if (!any) {
+                break;
+            }
+        }
     }
-    if (status != 200) {
-        ESP_LOGW(TAG, "GitHub API HTTP %d", status);
-        free(resp);
-        return ESP_FAIL;
-    }
 
-    resp[acc.len] = '\0';
-    cJSON *json = cJSON_Parse(resp);
-    free(resp);
-    if (json == NULL) {
-        ESP_LOGW(TAG, "failed to parse GitHub API response");
+    if (!best.have) {
         return ESP_ERR_INVALID_RESPONSE;
     }
 
-    /* Extract tag_name, e.g. "v0.0.2".  The download URL is constructed from
-     * this rather than iterating the assets array — saves parsing effort. */
-    const cJSON *tag_item = cJSON_GetObjectItemCaseSensitive(json, "tag_name");
-    if (!cJSON_IsString(tag_item) || tag_item->valuestring == NULL) {
-        cJSON_Delete(json);
+    /* The running version may carry `git describe` decoration. */
+    semver_t local_ver;
+    if (!semver_parse_build(result->current_version, &local_ver)) {
+        ESP_LOGW(TAG, "cannot parse local version: %s", result->current_version);
         return ESP_ERR_INVALID_RESPONSE;
     }
 
-    const char *remote_tag = tag_item->valuestring;
-    semver_t local_ver, remote_ver;
-    if (!parse_semver(result->current_version, &local_ver) ||
-        !parse_semver(remote_tag, &remote_ver)) {
-        ESP_LOGW(TAG, "cannot parse versions: local=%s remote=%s",
-                 result->current_version, remote_tag);
-        cJSON_Delete(json);
-        return ESP_ERR_INVALID_RESPONSE;
-    }
-
-    strlcpy(result->tag, remote_tag, sizeof(result->tag));
+    strlcpy(result->tag, best.tag, sizeof(result->tag));
     /* Strip the "v" prefix for the human-readable version. */
-    const char *v = remote_tag;
+    const char *v = best.tag;
     if (*v == 'v' || *v == 'V') {
         v++;
     }
     strlcpy(result->new_version, v, sizeof(result->new_version));
 
-    result->available = semver_cmp(&remote_ver, &local_ver) > 0;
+    result->available = semver_cmp(&best.ver, &local_ver) > 0;
 
     ESP_LOGI(TAG, "local=%s remote=%s -> %s", result->current_version,
-             remote_tag, result->available ? "UPDATE AVAILABLE" : "up to date");
-
-    cJSON_Delete(json);
+             best.tag, result->available ? "UPDATE AVAILABLE" : "up to date");
     return ESP_OK;
 }
 

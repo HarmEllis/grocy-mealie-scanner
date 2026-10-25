@@ -32,6 +32,7 @@ static int s_last_http_status;
  * 1 (the pre-products/{id} contract) until a successful ping reports otherwise,
  * so features gated on a newer server stay hidden against old/unknown servers. */
 static int s_server_api_version = 1;
+static bool s_server_prerelease;
 
 void api_client_init(const app_config_t *cfg)
 {
@@ -207,6 +208,8 @@ static void take_server_error(const cJSON *json, char *errbuf, const char *fallb
 
 esp_err_t api_ping(char *errbuf)
 {
+    /* A failed ping must not leave a stale pre-release channel behind. */
+    s_server_prerelease = false;
     int status = 0;
     cJSON *json = NULL;
     ESP_RETURN_ON_ERROR(request_json("GET", "/api/device/v1/ping", NULL,
@@ -216,6 +219,9 @@ esp_err_t api_ping(char *errbuf)
     if (ok) {
         /* Absent on pre-v2 servers -> keep the conservative default of 1. */
         s_server_api_version = (int)json_get_num(json, "apiVersion", 1);
+        char server_version[32] = "";
+        json_get_str(json, "version", server_version, sizeof(server_version));
+        s_server_prerelease = strchr(server_version, '-') != NULL;
     } else {
         take_server_error(json, errbuf,
                           status == 401 ? tr("invalid_device_token") : tr("ping_failed"));
@@ -227,6 +233,11 @@ esp_err_t api_ping(char *errbuf)
 int api_server_api_version(void)
 {
     return s_server_api_version;
+}
+
+bool api_server_is_prerelease(void)
+{
+    return s_server_prerelease;
 }
 
 int api_last_http_status(void)
