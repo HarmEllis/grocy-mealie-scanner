@@ -13,7 +13,9 @@
 #include "esp_err.h"
 #include <stdbool.h>
 
-#define OTA_VERSION_LEN 24
+/* Holds any tag semver_best_consider keeps (SEMVER_TAG_LEN) and the 31-character
+ * esp_app_desc_t version. */
+#define OTA_VERSION_LEN 48
 
 typedef struct {
     bool available;
@@ -31,10 +33,17 @@ typedef void (*ota_progress_cb_t)(int percent);
  * ESP_ERR_INVALID_STATE immediately if the clock is still at epoch so TLS
  * certificate validation is not attempted with a bogus date.
  *
+ * `include_prereleases` also considers GitHub pre-releases and offers the
+ * highest version by semver precedence (a pre-release sorts below its release).
+ * Without it only the latest stable release is offered. The caller sets it
+ * when the connected gm-sync runs a pre-release, so a scanner follows a
+ * pre-release server onto the matching pre-release firmware, and returns to
+ * stable releases otherwise.
+ *
  * Returns ESP_OK when the check itself succeeded (regardless of whether an
  * update is available); inspect result->available.  Returns an error when the
  * check could not be performed (network, parse, clock). */
-esp_err_t ota_check_for_update(ota_check_result_t *result);
+esp_err_t ota_check_for_update(bool include_prereleases, ota_check_result_t *result);
 
 /* Download and install the firmware for the given version tag (e.g. "v0.0.2").
  *

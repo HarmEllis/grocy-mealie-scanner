@@ -162,10 +162,28 @@ below before creating the tag.
      report that the release has not been pushed, tagged remotely, or drafted
      on GitHub
 
+## Pre-Release Tags
+
+A pre-release lets a scanner try firmware that belongs to a pre-release of
+grocy-mealie-sync (a scanner follows a pre-release server onto pre-release
+firmware, see the README). It is lighter than a full release:
+
+1. Tag the commit on the feature branch or `main` with a semver suffix, such
+   as `v0.7.0-rc.1` (count up: `-rc.2`). `-beta.N` and `-alpha.N` also work.
+   Build metadata (`+meta`) is not supported. The tag is at most 31 characters
+   and must not end in `-dirty` or `-<n>-g<sha>`; the Pages workflow rejects both.
+2. Skip the `CHANGELOG.md` section and the `flash-server/manifest.json` bump;
+   those belong to the final release.
+3. Build the firmware and check the size (release step 4) before asking to
+   push the tag; ask the user before pushing it, as with a release.
+4. The Pages workflow marks the GitHub release as pre-release and skips the
+   hosted flasher. Edit the release notes to say which grocy-mealie-sync
+   pre-release it pairs with.
+
 ## Version Format
 
 - `flash-server/manifest.json` uses plain semver like `0.2.0`.
-- Git tags use a `v` prefix like `v0.2.0`.
+- Git tags use a `v` prefix like `v0.2.0`; pre-release tags append a suffix like `v0.2.0-rc.1`.
 
 ## Git safe.directory
 

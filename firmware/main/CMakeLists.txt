@@ -12,7 +12,7 @@ endif()
 if(CONFIG_GMS_DEMO_MODE)
     set(OTA_SRCS "")
 else()
-    set(OTA_SRCS ota_update.c)
+    set(OTA_SRCS ota_update.c semver.c)
 endif()
 
 idf_component_register(

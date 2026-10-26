@@ -50,6 +50,20 @@ jobs:
             echo "Expected tag in form vMAJOR.MINOR.PATCH[-prerelease], got: $TAG" >&2
             exit 1
           fi
+          # The firmware embeds the tag as its version, and esp_app_desc_t
+          # holds at most 31 characters of it (32 with the NUL).
+          if [ "${#TAG}" -gt 31 ]; then
+            echo "Tag is ${#TAG} characters; at most 31 are supported: $TAG" >&2
+            exit 1
+          fi
+          # "-dirty" and "-<n>-g<sha>" are what `git describe` appends to dev
+          # builds, and the firmware strips them from its own version. A
+          # release tag ending that way would look like a dev build of an
+          # older tag and be offered again after installing.
+          if printf '%s\n' "$TAG" | grep -Eq -- '(-dirty|-[0-9]+-g[0-9a-fA-F]+)$'; then
+            echo "Tag must not end in a git-describe suffix (-dirty, -N-gSHA): $TAG" >&2
+            exit 1
+          fi
 
       - name: Verify tag ref exists (rejects same-named branches)
         env:
@@ -149,11 +163,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # A tag with a "-" suffix (v0.7.0-rc.1) is a pre-release: GitHub
+          # then keeps it out of /releases/latest, which is what the
+          # scanner's stable OTA channel reads.
+          prerelease_flag=()
+          case "$TAG" in *-*) prerelease_flag=(--prerelease) ;; esac
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" \
               --title "$TAG" \
               --generate-notes \
-              --verify-tag
+              --verify-tag \
+              "${prerelease_flag[@]}"
+          elif [ "${#prerelease_flag[@]}" -gt 0 ]; then
+            # A release or curated draft that exists already must not be
+            # able to leak test firmware to stable clients when published.
+            # Only the flag changes: draft state and notes are kept.
+            gh release edit "$TAG" --prerelease
           fi
           gh release upload "$TAG" \
             bins/*.bin \
@@ -166,6 +191,9 @@ jobs:
     # publish firmware that wasn't also published as an immutable Release
     # asset — keeps the two surfaces byte-identical and auditable.
     needs: [build-firmware, release-assets]
+    # The hosted flasher always serves the latest stable firmware, so a
+    # pre-release tag (v0.7.0-rc.1) never deploys Pages.
+    if: ${{ !contains(needs.build-firmware.outputs.tag, '-') }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read   # actions/checkout needs read on the tag ref
