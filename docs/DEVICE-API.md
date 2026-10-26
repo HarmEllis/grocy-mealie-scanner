@@ -33,7 +33,7 @@ appropriate 4xx/5xx status.
 Connectivity + auth check used by the firmware at boot and as a health probe.
 
 ```json
-{ "ok": true, "app": "grocy-mealie-sync", "version": "1.9.0", "apiVersion": 4 }
+{ "ok": true, "app": "grocy-mealie-sync", "version": "1.9.0", "apiVersion": 5 }
 ```
 
 - `apiVersion` is the device-API capability version. The firmware defaults to
@@ -46,6 +46,10 @@ Connectivity + auth check used by the firmware at boot and as a health probe.
   - `apiVersion >= 4` advertises `GET /labels`, `GET /letters`, and the
     `labelId`/`letter` filters on `GET /products` (the home-screen "Browse"
     button: browse by label / by A-Z).
+  - `apiVersion >= 5` advertises `include=mealie` on `GET /products?query=` and
+    `mealieFoodId` on `POST /products` (link a scanned barcode to a Mealie-only
+    food; the server creates its Grocy product). The firmware only sends them
+    when the server advertises `5`.
 
 ### `GET /api/device/v1/scan/{barcode}`
 
@@ -159,6 +163,26 @@ Grocy products; `limit` defaults to 8, max 25.
   ]
 }
 ```
+
+Optional `include=mealie` (only valid with `query`; any other value or
+selector → `400`) also returns Mealie foods that have no Grocy product yet,
+after the Grocy matches and within the same `limit`. The firmware sets it only
+in the unknown-barcode link flow, never for the home-screen search. Mealie-only
+entries are marked and carry the food id instead of a product id; Grocy entries
+gain `"source":"grocy"` in this mode:
+
+```json
+{
+  "results": [
+    { "id": 43, "name": "Whole Milk", "stockAmount": 5, "source": "grocy" },
+    { "id": 0, "name": "Oat Milk", "stockAmount": 0, "source": "mealie",
+      "mealieFoodId": "6f1c…" }
+  ]
+}
+```
+
+A Mealie lookup failure degrades to the Grocy results only. Without
+`include=mealie` the response is unchanged.
 
 Empty `query` → `400`. A duplicate parameter key (e.g. `?query=a&query=b`), an
 unknown parameter, or `offset` combined with `query` (not part of this
@@ -283,6 +307,19 @@ Request:
 - Duplicate name (case-insensitive exact match) → `409` with the existing
   product, so the device can offer to link instead:
   `{"error":"Product already exists","product":{"id":42,"name":"…"}}`.
+
+Alternatively, to link the barcode to a Mealie-only food picked from a search
+with `include=mealie`, send `mealieFoodId` instead of `name` (`apiVersion >= 5`):
+
+```json
+{ "mealieFoodId": "6f1c…", "barcode": "8715700110622" }
+```
+
+The server creates the Grocy product from the food's current name, maps the
+two and links the barcode. A `mealieFoodId` that is present but not a non-empty
+string → `400` (it never falls back to creating a new product). Unknown food →
+`404`; food already mapped, or an exact Grocy name match → `409` with that
+Grocy product in the body (as above); barcode already linked elsewhere → `409`.
 
 Response (`201`): the `product` object **at the response root** (not wrapped
 in a `{"product": …}` envelope, unlike `scan`) — same field shape as the

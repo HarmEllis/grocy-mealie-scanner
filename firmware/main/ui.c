@@ -1599,6 +1599,17 @@ static void search_pick_cb(lv_event_t *e)
     emit(UI_EVT_SEARCH_PICK, 0, id, NULL);
 }
 
+/* Stable storage for Mealie food ids so a row's click callback (fired later,
+ * on tap) can read back which result was tapped; emit() copies the string
+ * immediately. Only needs to stay valid while the results are on screen. */
+static char s_search_mealie_ids[API_MAX_RESULTS][API_LABEL_ID_LEN];
+
+static void search_pick_mealie_cb(lv_event_t *e)
+{
+    const char *food_id = (const char *)lv_event_get_user_data(e);
+    emit(UI_EVT_SEARCH_PICK_MEALIE, 0, 0, food_id);
+}
+
 /* The keyboard's hide key (make_gms_keyboard) toggles its own visibility;
  * here we grow the result list into the freed space so it's easy to scroll,
  * and shrink it back when the field is tapped and the keyboard returns. */
@@ -1688,8 +1699,13 @@ static lv_obj_t *build_product_row(lv_obj_t *parent, const api_product_ref_t *re
 
     char stock[28];
     char amount[12];
-    fmt_amount(amount, sizeof(amount), ref->stock_amount);
-    snprintf(stock, sizeof(stock), tr("in_stock_fmt"), amount);
+    if (ref->mealie_food_id[0] != '\0') {
+        /* Mealie-only: there is no Grocy product (or stock) yet. */
+        snprintf(stock, sizeof(stock), "%s", tr("mealie_only"));
+    } else {
+        fmt_amount(amount, sizeof(amount), ref->stock_amount);
+        snprintf(stock, sizeof(stock), tr("in_stock_fmt"), amount);
+    }
     lv_obj_t *st = lv_label_create(row);
     lv_label_set_text(st, stock);
     lv_obj_set_style_text_font(st, &gms_font_10, 0);
@@ -1714,8 +1730,14 @@ void ui_show_search_results(const api_search_result_t *results)
     }
     for (int i = 0; i < results->count; i++) {
         const api_product_ref_t *ref = &results->results[i];
-        build_product_row(s_search_results_box, ref, search_pick_cb,
-                          (void *)(uintptr_t)ref->id);
+        if (ref->mealie_food_id[0] != '\0') {
+            strlcpy(s_search_mealie_ids[i], ref->mealie_food_id, sizeof(s_search_mealie_ids[i]));
+            build_product_row(s_search_results_box, ref, search_pick_mealie_cb,
+                              s_search_mealie_ids[i]);
+        } else {
+            build_product_row(s_search_results_box, ref, search_pick_cb,
+                              (void *)(uintptr_t)ref->id);
+        }
     }
     lvgl_port_unlock();
 }

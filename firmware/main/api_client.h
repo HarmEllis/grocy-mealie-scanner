@@ -41,6 +41,9 @@ typedef struct {
     char name[API_NAME_LEN];
     double stock_amount; /* only filled by product search */
     double score;        /* only filled by scan suggestions */
+    /* Non-empty only for a Mealie-only search result (id == 0): the Mealie
+     * food to create the Grocy product from. See docs/DEVICE-API.md. */
+    char mealie_food_id[API_LABEL_ID_LEN];
 } api_product_ref_t;
 
 typedef enum {
@@ -125,7 +128,11 @@ bool api_error_is_transport(esp_err_t err);
 /* `amount` is the quantity for the action (>= 1; the picker yields 1-9). */
 esp_err_t api_action(int product_id, api_action_t action, int amount,
                      api_action_result_t *out, char *errbuf);
-esp_err_t api_search(const char *query, api_search_result_t *out, char *errbuf);
+/* `include_mealie` also asks for Mealie-only foods (device API >= 5); it is
+ * ignored when the server does not advertise that. Only the unknown-barcode
+ * link flow sets it: a Mealie-only food has no stock to show on its own. */
+esp_err_t api_search(const char *query, bool include_mealie,
+                     api_search_result_t *out, char *errbuf);
 /* Browse: full first page only (no offset), see api_browse_result_t. */
 esp_err_t api_list_labels(api_label_list_t *out, char *errbuf);
 esp_err_t api_list_letters(api_letter_list_t *out, char *errbuf);
@@ -133,6 +140,10 @@ esp_err_t api_list_products_by_label(const char *label_id, api_browse_result_t *
 esp_err_t api_list_products_by_letter(char letter, api_browse_result_t *out, char *errbuf);
 esp_err_t api_create_product(const char *name, const char *barcode,
                              api_product_t *out, char *errbuf);
+/* Creates the Grocy product for a Mealie-only food, maps it and links the
+ * barcode (device API >= 5). A 409 behaves like api_create_product. */
+esp_err_t api_create_product_from_mealie(const char *mealie_food_id, const char *barcode,
+                                         api_product_t *out, char *errbuf);
 esp_err_t api_link_barcode(int product_id, const char *barcode,
                            api_product_t *out, char *errbuf);
 /* Fetch a full product by id (home-screen search -> pick, shown as if scanned).
