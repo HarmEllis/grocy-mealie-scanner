@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-26
+
+Mealie-only products can now be picked when linking a scanned barcode, and
+OTA updates can follow a pre-release grocy-mealie-sync onto pre-release
+firmware. Linking Mealie-only products needs a grocy-mealie-sync that reports
+device API version 5; with an older server the search works as before.
+
+### Added
+
+- When searching for a product to link an unknown barcode to, Mealie-only
+  foods are listed too and marked as Mealie only. Picking one makes the
+  server create the Grocy product, map it to the Mealie food and link the
+  barcode.
+- OTA update check follows the connected grocy-mealie-sync version: when the
+  server runs a pre-release, pre-release firmware is considered as well and
+  the highest semver wins. Otherwise only the latest stable release is
+  offered, as before.
+- Semver precedence handling (`semver.c`) with host tests.
+- Device API v5 contract (`include=mealie`, `mealieFoodId`) in
+  `docs/DEVICE-API.md`.
+
+### Changed
+
+- The Pages workflow publishes tags with a pre-release suffix as GitHub
+  pre-releases, skips the hosted web flasher deploy for them, and rejects
+  tags that cannot round-trip through the firmware version.
+
 ## [0.6.0] - 2026-10-13
 
 Browse release: products can now be picked without typing, by Mealie label
@@ -271,7 +298,8 @@ flasher, and the first device API contract for grocy-mealie-sync.
   WiFi setup requests, URL truncation, invalid barcode lengths, stale timeout
   events, and mismatched create/link product response shapes.
 
-[Unreleased]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/HarmEllis/grocy-mealie-scanner/compare/v0.4.1...v0.5.0
